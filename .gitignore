@@ -1,0 +1,1 @@
+.env public/uploads/* uploads/* *.log .DS_Store Thumbs.db

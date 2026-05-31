@@ -1,0 +1,58 @@
+[Sun May 31 15:42:05 2026] PHP 8.5.6 Development Server (http://127.0.0.1:8000) started
+[Sun May 31 15:43:59 2026] 127.0.0.1:60724 Accepted
+[Sun May 31 15:43:59 2026] 127.0.0.1:60724 [200]: GET /login.php
+[Sun May 31 15:43:59 2026] 127.0.0.1:60724 Closing
+[Sun May 31 15:43:59 2026] 127.0.0.1:60725 Accepted
+[Sun May 31 15:44:00 2026] 127.0.0.1:60725 [302]: POST /login.php
+[Sun May 31 15:44:00 2026] 127.0.0.1:60725 Closing
+[Sun May 31 15:44:00 2026] 127.0.0.1:60726 Accepted
+[Sun May 31 15:44:00 2026] 127.0.0.1:60726 [200]: GET /dashboard.php
+[Sun May 31 15:44:00 2026] 127.0.0.1:60726 Closing
+[Sun May 31 15:44:36 2026] 127.0.0.1:60751 Accepted
+[Sun May 31 15:44:36 2026] 127.0.0.1:60751 [200]: GET /login.php
+[Sun May 31 15:44:36 2026] 127.0.0.1:60751 Closing
+[Sun May 31 15:44:37 2026] 127.0.0.1:60754 Accepted
+[Sun May 31 15:44:37 2026] 127.0.0.1:60754 [200]: GET /assets/css/styles.css
+[Sun May 31 15:44:37 2026] 127.0.0.1:60754 Closing
+[Sun May 31 15:44:37 2026] 127.0.0.1:60755 Accepted
+[Sun May 31 15:44:37 2026] 127.0.0.1:60755 [200]: GET /assets/img/stuca-logo.png
+[Sun May 31 15:44:37 2026] 127.0.0.1:60755 Closing
+[Sun May 31 15:45:08 2026] 127.0.0.1:60778 Accepted
+[Sun May 31 15:45:09 2026] 127.0.0.1:60778 [302]: POST /login.php
+[Sun May 31 15:45:09 2026] 127.0.0.1:60778 Closing
+[Sun May 31 15:45:09 2026] 127.0.0.1:60779 Accepted
+[Sun May 31 15:45:09 2026] 127.0.0.1:60779 [200]: GET /dashboard.php
+[Sun May 31 15:45:09 2026] 127.0.0.1:60779 Closing
+[Sun May 31 15:45:09 2026] 127.0.0.1:60780 Accepted
+[Sun May 31 15:45:09 2026] 127.0.0.1:60780 [200]: GET /assets/css/styles.css?v=20260531-portal
+[Sun May 31 15:45:09 2026] 127.0.0.1:60780 Closing
+[Sun May 31 15:45:09 2026] 127.0.0.1:60781 Accepted
+[Sun May 31 15:45:09 2026] 127.0.0.1:60782 Accepted
+[Sun May 31 15:45:09 2026] 127.0.0.1:60781 [200]: GET /assets/js/app.js?v=20260531-portal
+[Sun May 31 15:45:09 2026] 127.0.0.1:60782 [200]: GET /assets/img/stuca-logo.png
+[Sun May 31 15:45:09 2026] 127.0.0.1:60781 Closing
+[Sun May 31 15:45:09 2026] 127.0.0.1:60782 Closing
+[Sun May 31 15:48:07 2026] 127.0.0.1:60802 Accepted
+[Sun May 31 15:48:07 2026] 127.0.0.1:60802 [200]: GET /dashboard.php
+[Sun May 31 15:48:07 2026] 127.0.0.1:60802 Closing
+[Sun May 31 15:48:07 2026] 127.0.0.1:60803 Accepted
+[Sun May 31 15:48:07 2026] 127.0.0.1:60804 Accepted
+[Sun May 31 15:48:07 2026] 127.0.0.1:60805 Accepted
+[Sun May 31 15:48:07 2026] 127.0.0.1:60803 [200]: GET /assets/css/styles.css?v=20260531-portal
+[Sun May 31 15:48:07 2026] 127.0.0.1:60804 [200]: GET /assets/img/stuca-logo.png
+[Sun May 31 15:48:07 2026] 127.0.0.1:60805 [200]: GET /assets/js/app.js?v=20260531-portal
+[Sun May 31 15:48:07 2026] 127.0.0.1:60803 Closing
+[Sun May 31 15:48:07 2026] 127.0.0.1:60804 Closing
+[Sun May 31 15:48:07 2026] 127.0.0.1:60805 Closing
+[Sun May 31 15:48:50 2026] 127.0.0.1:60811 Accepted
+[Sun May 31 15:48:50 2026] 127.0.0.1:60811 [200]: GET /dashboard.php
+[Sun May 31 15:48:50 2026] 127.0.0.1:60811 Closing
+[Sun May 31 15:48:50 2026] 127.0.0.1:60812 Accepted
+[Sun May 31 15:48:50 2026] 127.0.0.1:60812 [200]: GET /assets/css/styles.css?v=20260531-portal
+[Sun May 31 15:48:50 2026] 127.0.0.1:60813 Accepted
+[Sun May 31 15:48:50 2026] 127.0.0.1:60814 Accepted
+[Sun May 31 15:48:50 2026] 127.0.0.1:60813 [200]: GET /assets/img/stuca-logo.png
+[Sun May 31 15:48:50 2026] 127.0.0.1:60814 [200]: GET /assets/js/app.js?v=20260531-portal
+[Sun May 31 15:48:50 2026] 127.0.0.1:60812 Closing
+[Sun May 31 15:48:50 2026] 127.0.0.1:60813 Closing
+[Sun May 31 15:48:50 2026] 127.0.0.1:60814 Closing
