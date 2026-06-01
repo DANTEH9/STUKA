@@ -7,6 +7,7 @@ STUCA is a PHP and MySQL academic portal for course registration, teaching workf
 - Secure session login/logout with `password_hash`, `password_verify`, CSRF checks, and role-based page access.
 - Role dashboards for Super Admin, Admin, Department Head, Lecturer, and Student users.
 - Management pages for users, students, lecturers, departments, courses, modules, course registrations, materials, assignments, timetables, results, past papers, announcements, reports, settings, activity logs, profile, 403, and 404.
+- Enhanced LMS workflow for CA breakdown modals, online assignment submission, lecturer submission review, late detection, and lecturer notifications.
 - PDO/MySQL repository with prepared statements. Demo data fallback is available only when explicitly enabled.
 - Upload validation for `pdf`, `doc`, `docx`, `ppt`, `pptx`, `jpg`, `jpeg`, and `png` files.
 - Full MySQL schema and seed data in `database/schema.sql`.
@@ -51,6 +52,12 @@ STUCA_ALLOW_DEMO_FALLBACK=false
 
 ```powershell
 mysql -u root -p < database/schema.sql
+```
+
+For an existing local database, apply incremental workflow updates with:
+
+```powershell
+Get-Content -Raw database/migrations/20260601_academic_workflow.sql | mysql -u root
 ```
 
 5. Start the local PHP server from the project root:

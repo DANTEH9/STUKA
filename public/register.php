@@ -111,7 +111,7 @@ $config = app_config();
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Register | <?= e($config['app_name']) ?></title>
-    <link rel="stylesheet" href="assets/css/styles.css?v=20260531-auth">
+    <link rel="stylesheet" href="assets/css/styles.css?v=20260601-workflow">
 </head>
 <body class="login-page">
     <main class="login-shell register-shell">

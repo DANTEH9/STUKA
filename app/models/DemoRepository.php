@@ -79,6 +79,7 @@ final class DemoRepository
             'registered_courses' => count(array_filter($this->data['registrations'], static fn (array $row): bool => (int) $row['user_id'] === (int) ($user['id'] ?? 0) && $row['status'] === 'approved')),
             'assigned_courses' => count(array_filter($this->data['lecturer_courses'], static fn (array $row): bool => (int) $row['lecturer_id'] === (int) ($user['id'] ?? 0))),
             'enrolled_students' => count(array_unique(array_column($this->data['registrations'], 'user_id'))),
+            'pending_reviews' => 0,
         ];
     }
 
@@ -119,6 +120,77 @@ final class DemoRepository
     public function getAssignments(array $filters = [], ?array $user = null): array
     {
         return $this->filter($this->scopeByUser($this->data['assignments'], $user), $filters);
+    }
+
+    public function getAssignmentById(int $id, ?array $user = null): ?array
+    {
+        foreach ($this->scopeByUser($this->data['assignments'], $user) as $assignment) {
+            if ((int) $assignment['id'] === $id) {
+                return $assignment + ['submission_count' => 0, 'reviewed_count' => 0, 'late_count' => 0];
+            }
+        }
+
+        return null;
+    }
+
+    public function getAssignmentSubmissions(int $assignmentId): array
+    {
+        return [];
+    }
+
+    public function getSubmissionForReview(int $submissionId, ?array $user = null): ?array
+    {
+        return null;
+    }
+
+    public function getCaResultsForStudent(int $studentId): array
+    {
+        $results = [];
+        foreach ($this->data['results'] as $result) {
+            if ((int) ($result['student_id'] ?? 0) !== $studentId) {
+                continue;
+            }
+
+            $maxScores = [10, 10, 5, 10, 10, 5, 5, 5];
+            $score = (int) ($result['ca_score'] ?? 0);
+            $remaining = $score;
+            $items = [];
+            foreach (['Test 1', 'Test 2', 'Quiz', 'Assignment 1', 'Assignment 2', 'Group Assignment', 'Presentation', 'Practical'] as $index => $name) {
+                $itemScore = min($maxScores[$index], max(0, $remaining));
+                $remaining -= $itemScore;
+                $items[] = ['item_name' => $name, 'score' => $itemScore, 'max_score' => $maxScores[$index]];
+            }
+
+            $results[] = [
+                'id' => (int) $result['id'],
+                'student_id' => $studentId,
+                'course_id' => (int) $result['course_id'],
+                'module_id' => (int) ($result['module_id'] ?? $result['id']),
+                'course_title' => $result['course_title'] ?? '',
+                'course_code' => $result['course_code'] ?? '',
+                'module_name' => $result['module_name'] ?? '',
+                'module_code' => $result['module_code'] ?? '',
+                'academic_year' => $result['academic_year'] ?? '',
+                'semester' => $result['semester'] ?? '',
+                'class_group' => 'OD23IT',
+                'total_ca' => $result['ca_score'] ?? 0,
+                'max_ca' => 60,
+                'lecturer_remarks' => 'Keep improving your coursework consistency.',
+                'items' => $items,
+            ];
+        }
+
+        return $results;
+    }
+
+    public function getNotificationsForUser(int $userId, int $limit = 5): array
+    {
+        return array_slice($this->data['notifications'] ?? [], 0, $limit);
+    }
+
+    public function getRecentSubmissionsForLecturer(array $user, int $limit = 5): array
+    {
+        return [];
     }
 
     public function getMaterials(array $filters = [], ?array $user = null): array
@@ -365,6 +437,7 @@ final class DemoRepository
             'lecturer' => $lecturer['name'] ?? '',
             'title' => $data['title'],
             'instructions' => $data['instructions'] ?? '',
+            'date_given' => $data['date_given'] ?? date('Y-m-d'),
             'deadline' => $data['deadline'],
             'submission_type' => $data['submission_type'] ?? 'Online upload',
             'status' => $data['status'] ?? 'open',
@@ -376,6 +449,11 @@ final class DemoRepository
     public function createAssignmentSubmission(array $data, ?array $actor = null): void
     {
         $this->rememberLog($actor, 'submitted assignment', 'assignment_submissions');
+    }
+
+    public function markSubmissionReviewed(int $submissionId, ?array $actor = null, ?string $remarks = null): void
+    {
+        $this->rememberLog($actor, 'reviewed assignment submission', 'assignment_submissions');
     }
 
     public function createMaterial(array $data, ?array $actor = null): void

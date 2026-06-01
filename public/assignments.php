@@ -30,8 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'semester_id' => post_value('semester_id'),
                 'title' => post_value('title'),
                 'instructions' => post_value('instructions'),
+                'date_given' => post_value('date_given', date('Y-m-d')),
                 'deadline' => post_value('deadline'),
-                'submission_type' => post_value('submission_type', 'Online upload'),
+                'submission_type' => post_value('submission_type', 'Online / Email'),
                 'status' => post_value('status', 'open'),
                 'file_path' => $filePath,
             ], $user);
@@ -44,6 +45,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'student_id' => $user['id'],
                 'file_path' => $upload['file_path'],
                 'original_name' => $upload['original_name'],
+                'student_comment' => post_value('student_comment'),
             ], $user);
             set_flash('success', 'Assignment submitted.');
         }
@@ -67,6 +69,7 @@ $filters = [
 ];
 $assignments = $repo->getAssignments($filters, $user);
 $pagination = paginate($assignments, (int) request_value('page', '1'), app_config('items_per_page'));
+$submissionModals = [];
 
 page_start('Assignments', 'assignments');
 ?>
@@ -118,10 +121,16 @@ page_start('Assignments', 'assignments');
                 <?php endforeach; ?>
             </select>
         </label>
+        <label><span>Date given</span><input type="date" name="date_given" value="<?= e(date('Y-m-d')) ?>" required></label>
         <label><span>Deadline</span><input type="date" name="deadline" required></label>
         <label>
             <span>Submission type</span>
-            <select name="submission_type"><option>Online upload</option><option>Hard copy</option><option>Email</option></select>
+            <select name="submission_type">
+                <option>Online / Email</option>
+                <option>Hard Copy</option>
+                <option>Presentation</option>
+                <option>Manual</option>
+            </select>
         </label>
         <label>
             <span>Status</span>
@@ -167,36 +176,54 @@ page_start('Assignments', 'assignments');
             <thead>
                 <tr>
                     <th>Assignment</th>
-                    <th>Course</th>
-                    <th>Lecturer</th>
+                    <th>Date Given</th>
                     <th>Deadline</th>
+                    <th>Submission Type</th>
                     <th>Status</th>
-                    <th>Action</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($pagination['items'] as $assignment): ?>
+                    <?php
+                    $statusMeta = assignment_status_meta($assignment);
+                    $canSubmitOnline = $user['role'] === 'student'
+                        && ($assignment['status'] ?? '') === 'open'
+                        && is_online_submission_type($assignment['submission_type'] ?? '');
+                    ?>
                     <tr>
                         <td>
                             <strong><?= e($assignment['title']) ?></strong>
-                            <span><?= e($assignment['module_name'] ?: $assignment['course_title']) ?></span>
+                            <span><?= e($assignment['course_code']) ?> - <?= e($assignment['module_name'] ?: $assignment['course_title']) ?></span>
+                            <small><?= e($assignment['lecturer'] ?? 'Unassigned') ?></small>
                         </td>
-                        <td><strong><?= e($assignment['course_title']) ?></strong><span><?= e($assignment['course_code']) ?></span></td>
-                        <td><?= e($assignment['lecturer'] ?? 'Unassigned') ?></td>
+                        <td><?= e(display_date($assignment['date_given'] ?? '')) ?></td>
                         <td><?= e(display_date($assignment['deadline'])) ?></td>
-                        <td><span class="pill <?= ($assignment['status'] ?? '') === 'open' ? 'success' : 'warning' ?>"><?= e($assignment['status']) ?></span></td>
+                        <td><span class="pill soft"><?= e($assignment['submission_type']) ?></span></td>
+                        <td>
+                            <span class="status-stack">
+                                <span class="pill <?= e($statusMeta['class']) ?>"><?= e($statusMeta['label']) ?></span>
+                                <?php if (!empty($assignment['submission_id']) && (int) ($assignment['submission_is_late'] ?? 0) === 1): ?>
+                                    <small class="table-note"><?= e(late_duration_label((int) $assignment['late_duration_minutes'])) ?></small>
+                                <?php endif; ?>
+                                <?php if ($user['role'] !== 'student'): ?>
+                                    <small class="table-note"><?= e((string) ($assignment['reviewed_count'] ?? 0)) ?> Reviewed / <?= e((string) max(0, (int) ($assignment['submission_count'] ?? 0) - (int) ($assignment['reviewed_count'] ?? 0))) ?> Not Reviewed</small>
+                                <?php endif; ?>
+                            </span>
+                        </td>
                         <td class="action-cell">
                             <?php if (!empty($assignment['file_path'])): ?>
                                 <a class="button quiet" href="<?= e($assignment['file_path']) ?>" download>Download</a>
                             <?php endif; ?>
-                            <?php if ($user['role'] === 'student' && ($assignment['status'] ?? '') === 'open'): ?>
-                                <form method="post" enctype="multipart/form-data" class="inline-upload">
-                                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
-                                    <input type="hidden" name="action" value="submit">
-                                    <input type="hidden" name="assignment_id" value="<?= e($assignment['id']) ?>">
-                                    <input type="file" name="submission_file" required>
-                                    <button class="button primary" type="submit">Submit</button>
-                                </form>
+                            <?php if ($canSubmitOnline): ?>
+                                <?php $modalId = 'submit-assignment-' . (int) $assignment['id']; $submissionModals[$modalId] = $assignment; ?>
+                                <button class="button primary" type="button" data-modal-open="<?= e($modalId) ?>">
+                                    <?= !empty($assignment['submission_id']) ? 'Resubmit Assignment' : 'Submit Assignment' ?>
+                                </button>
+                            <?php elseif ($user['role'] === 'student'): ?>
+                                <span class="muted-text"><?= e(is_online_submission_type($assignment['submission_type'] ?? '') ? 'Unavailable' : 'No upload required') ?></span>
+                            <?php elseif (can_upload_teaching_files($user['role'])): ?>
+                                <a class="button primary" href="submissions.php?assignment_id=<?= e($assignment['id']) ?>">View Submissions</a>
                             <?php else: ?>
                                 <a class="button subtle" href="assignments.php?search=<?= e(urlencode($assignment['title'])) ?>">View</a>
                             <?php endif; ?>
@@ -207,6 +234,40 @@ page_start('Assignments', 'assignments');
         </table>
     </div>
 </section>
+
+<?php foreach ($submissionModals as $modalId => $assignment): ?>
+    <div class="modal-backdrop" id="<?= e($modalId) ?>" data-modal hidden>
+        <section class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h2><?= e($assignment['title']) ?></h2>
+                    <span class="table-note"><?= e($assignment['course_code']) ?> - <?= e($assignment['module_name'] ?: $assignment['course_title']) ?> - Due <?= e(display_date($assignment['deadline'])) ?></span>
+                </div>
+                <button class="button quiet" type="button" data-modal-close>Close</button>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
+                    <input type="hidden" name="action" value="submit">
+                    <input type="hidden" name="assignment_id" value="<?= e($assignment['id']) ?>">
+                    <label class="drop-zone" data-drop-zone>
+                        <strong>Drop assignment file here</strong>
+                        <span data-file-name>PDF, DOCX, PPT/PPTX, ZIP, or image</span>
+                        <input type="file" name="submission_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.jpeg,.png" required>
+                    </label>
+                    <label class="stacked-form modal-note">
+                        <span>Comment</span>
+                        <textarea name="student_comment" rows="3" placeholder="Optional note for the lecturer"><?= e($assignment['student_comment'] ?? '') ?></textarea>
+                    </label>
+                </div>
+                <div class="modal-footer">
+                    <span class="table-note"><?= !empty($assignment['submission_id']) ? 'This will replace your previous upload.' : 'Your lecturer will be notified after upload.' ?></span>
+                    <button class="button primary" type="submit">Submit Assignment</button>
+                </div>
+            </form>
+        </section>
+    </div>
+<?php endforeach; ?>
 <?php
 pagination_controls($pagination);
 page_end();

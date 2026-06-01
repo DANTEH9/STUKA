@@ -184,6 +184,70 @@ function display_datetime(?string $date): string
     return $time ? date('d M Y, H:i', $time) : $date;
 }
 
+function is_online_submission_type(?string $type): bool
+{
+    $normalized = strtolower(trim((string) $type));
+
+    return in_array($normalized, ['online', 'online upload', 'online / email', 'online/email', 'email'], true);
+}
+
+function late_duration_label(int $minutes): string
+{
+    if ($minutes <= 0) {
+        return 'On time';
+    }
+
+    $days = intdiv($minutes, 1440);
+    $hours = intdiv($minutes % 1440, 60);
+    $remainingMinutes = $minutes % 60;
+    $parts = [];
+
+    if ($days > 0) {
+        $parts[] = $days . 'd';
+    }
+
+    if ($hours > 0) {
+        $parts[] = $hours . 'h';
+    }
+
+    if ($remainingMinutes > 0 || $parts === []) {
+        $parts[] = $remainingMinutes . 'm';
+    }
+
+    return implode(' ', $parts) . ' late';
+}
+
+function assignment_status_meta(array $assignment): array
+{
+    $hasSubmission = !empty($assignment['submission_id']);
+    $isReviewed = !empty($assignment['reviewed_at']);
+    $isLate = (int) ($assignment['submission_is_late'] ?? 0) === 1;
+    $deadlineTime = strtotime((string) ($assignment['deadline'] ?? '') . ' 23:59:59');
+    $isMissing = !$hasSubmission && $deadlineTime !== false && $deadlineTime < time();
+
+    if ($isReviewed) {
+        return ['label' => 'Reviewed', 'class' => 'success'];
+    }
+
+    if ($hasSubmission && $isLate) {
+        return ['label' => 'Submitted Late', 'class' => 'danger'];
+    }
+
+    if ($hasSubmission) {
+        return ['label' => 'Submitted', 'class' => 'success'];
+    }
+
+    if ($isMissing) {
+        return ['label' => 'Missing', 'class' => 'danger'];
+    }
+
+    if (($assignment['status'] ?? '') === 'closed') {
+        return ['label' => 'Closed', 'class' => 'warning'];
+    }
+
+    return ['label' => 'Open', 'class' => 'soft'];
+}
+
 function human_file_size(int $bytes): string
 {
     if ($bytes >= 1048576) {

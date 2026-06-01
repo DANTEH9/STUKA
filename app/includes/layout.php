@@ -84,7 +84,7 @@ function page_start(string $title, string $active): void
         <meta property="og:title" content="<?= e($title) ?> | <?= e($config['app_name']) ?>">
         <meta property="og:description" content="A PHP and MySQL academic portal for students, lecturers, administrators, and departments.">
         <title><?= e($title) ?> | <?= e($config['app_name']) ?></title>
-        <link rel="stylesheet" href="assets/css/styles.css?v=20260531-portal">
+        <link rel="stylesheet" href="assets/css/styles.css?v=20260601-workflow">
     </head>
     <body class="page-<?= e($active) ?>">
         <a class="skip-link" href="#content">Skip to content</a>
@@ -141,7 +141,7 @@ function page_end(): void
     ?>
             </main>
         </div>
-        <script src="assets/js/app.js?v=20260531-portal"></script>
+        <script src="assets/js/app.js?v=20260601-workflow"></script>
     </body>
     </html>
     <?php

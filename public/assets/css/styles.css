@@ -675,6 +675,141 @@ textarea {
     align-items: center;
 }
 
+.button-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+}
+
+.status-stack {
+    display: grid;
+    gap: 5px;
+    justify-items: start;
+}
+
+.table-note {
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.modal-note {
+    margin-top: 14px;
+}
+
+.review-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.review-summary .pill {
+    min-height: 32px;
+}
+
+.drop-zone {
+    display: grid;
+    gap: 8px;
+    place-items: center;
+    border: 1px dashed #a9bbd8;
+    border-radius: 8px;
+    background: #f7faff;
+    padding: 22px;
+    color: var(--muted);
+    text-align: center;
+}
+
+.drop-zone.is-dragging {
+    border-color: var(--brand);
+    background: #eef5ff;
+}
+
+.drop-zone input {
+    width: auto;
+    min-height: auto;
+    padding: 0;
+}
+
+.modal-backdrop[hidden] {
+    display: none;
+}
+
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: grid;
+    place-items: center;
+    overflow-y: auto;
+    background: rgba(12, 25, 48, 0.58);
+    padding: 24px;
+}
+
+.modal-card {
+    width: min(100%, 720px);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: var(--shadow);
+}
+
+.modal-card.wide {
+    width: min(100%, 920px);
+}
+
+.modal-header,
+.modal-body,
+.modal-footer {
+    padding: 18px;
+}
+
+.modal-header,
+.modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--line);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--line);
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+}
+
+.ca-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.ca-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: var(--surface-2);
+    padding: 10px 12px;
+}
+
+.ca-row.total {
+    grid-column: 1 / -1;
+    background: #fff8de;
+    font-weight: 700;
+}
+
+body.modal-open {
+    overflow: hidden;
+}
+
 .table-panel {
     padding: 0;
     overflow: hidden;
@@ -1057,6 +1192,10 @@ td {
     }
 
     .register-form {
+        grid-template-columns: 1fr;
+    }
+
+    .ca-grid {
         grid-template-columns: 1fr;
     }
 

@@ -4,6 +4,7 @@ USE stuca;
 SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS settings;
 DROP TABLE IF EXISTS activity_logs;
+DROP TABLE IF EXISTS notifications;
 DROP TABLE IF EXISTS announcements;
 DROP TABLE IF EXISTS results;
 DROP TABLE IF EXISTS timetables;
@@ -11,6 +12,8 @@ DROP TABLE IF EXISTS past_papers;
 DROP TABLE IF EXISTS materials;
 DROP TABLE IF EXISTS assignment_submissions;
 DROP TABLE IF EXISTS assignments;
+DROP TABLE IF EXISTS assessment_items;
+DROP TABLE IF EXISTS ca_results;
 DROP TABLE IF EXISTS lecturer_courses;
 DROP TABLE IF EXISTS course_registrations;
 DROP TABLE IF EXISTS modules;
@@ -170,6 +173,7 @@ CREATE TABLE assignments (
     semester_id INT UNSIGNED NULL,
     title VARCHAR(190) NOT NULL,
     instructions TEXT NULL,
+    date_given DATE NULL,
     deadline DATE NOT NULL,
     submission_type VARCHAR(80) NOT NULL DEFAULT 'Online upload',
     file_path VARCHAR(255) NULL,
@@ -191,16 +195,61 @@ CREATE TABLE assignment_submissions (
     student_id INT UNSIGNED NOT NULL,
     file_path VARCHAR(255) NOT NULL,
     original_name VARCHAR(190) NOT NULL,
+    student_comment TEXT NULL,
     submitted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    is_late TINYINT(1) NOT NULL DEFAULT 0,
+    late_duration_minutes INT UNSIGNED NOT NULL DEFAULT 0,
     status ENUM('submitted', 'resubmitted', 'graded') NOT NULL DEFAULT 'submitted',
     grade VARCHAR(20) NULL,
     feedback TEXT NULL,
+    reviewed_by INT UNSIGNED NULL,
+    reviewed_at DATETIME NULL,
+    review_remarks TEXT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY unique_submission (assignment_id, student_id),
     INDEX idx_submissions_student (student_id),
+    INDEX idx_submissions_reviewed (reviewed_at),
     CONSTRAINT fk_submissions_assignment FOREIGN KEY (assignment_id) REFERENCES assignments(id) ON DELETE CASCADE,
-    CONSTRAINT fk_submissions_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    CONSTRAINT fk_submissions_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_submissions_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE ca_results (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    student_id INT UNSIGNED NOT NULL,
+    course_id INT UNSIGNED NOT NULL,
+    module_id INT UNSIGNED NOT NULL,
+    academic_year_id INT UNSIGNED NULL,
+    semester_id INT UNSIGNED NULL,
+    class_group VARCHAR(80) NULL,
+    total_ca DECIMAL(5,2) NOT NULL DEFAULT 0,
+    max_ca DECIMAL(5,2) NOT NULL DEFAULT 60,
+    lecturer_remarks TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_ca_result (student_id, module_id, academic_year_id, semester_id, class_group),
+    INDEX idx_ca_results_student (student_id),
+    INDEX idx_ca_results_module (module_id),
+    CONSTRAINT fk_ca_results_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ca_results_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ca_results_module FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE,
+    CONSTRAINT fk_ca_results_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE SET NULL,
+    CONSTRAINT fk_ca_results_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE assessment_items (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    ca_result_id INT UNSIGNED NOT NULL,
+    item_name VARCHAR(120) NOT NULL,
+    score DECIMAL(5,2) NOT NULL DEFAULT 0,
+    max_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+    sort_order TINYINT UNSIGNED NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY unique_ca_item (ca_result_id, item_name),
+    INDEX idx_assessment_items_result (ca_result_id),
+    CONSTRAINT fk_assessment_items_result FOREIGN KEY (ca_result_id) REFERENCES ca_results(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
 CREATE TABLE materials (
@@ -316,6 +365,22 @@ CREATE TABLE announcements (
     CONSTRAINT fk_announcements_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
+CREATE TABLE notifications (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    user_id INT UNSIGNED NOT NULL,
+    actor_id INT UNSIGNED NULL,
+    entity_type VARCHAR(80) NOT NULL,
+    entity_id INT UNSIGNED NULL,
+    title VARCHAR(190) NOT NULL,
+    body TEXT NOT NULL,
+    is_read TINYINT(1) NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_notifications_user (user_id, is_read, created_at),
+    CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_notifications_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE activity_logs (
     id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     user_id INT UNSIGNED NULL,
@@ -388,10 +453,10 @@ INSERT INTO course_registrations (id, user_id, course_id, academic_year_id, seme
 (1, 5, 1, 1, 2, 'approved', '2026-02-01 08:12:00', 2, '2026-02-01 11:05:00', 'Continuing student'),
 (2, 5, 2, 1, 2, 'pending', '2026-05-12 13:41:00', NULL, NULL, 'Requested transfer evaluation');
 
-INSERT INTO assignments (id, course_id, module_id, lecturer_id, semester_id, title, instructions, deadline, submission_type, status) VALUES
-(1, 1, 3, 3, 2, 'Normalized schema design', 'Design an ERD and submit SQL create statements.', '2026-06-14', 'Online upload', 'open'),
-(2, 1, 2, 4, 2, 'PHP dashboard project', 'Build a secure CRUD dashboard with role checks.', '2026-06-21', 'Online upload', 'open'),
-(3, 1, 1, 4, 1, 'Algorithm practice set', 'Solve ten array and loop exercises.', '2026-06-07', 'Hard copy', 'closed');
+INSERT INTO assignments (id, course_id, module_id, lecturer_id, semester_id, title, instructions, date_given, deadline, submission_type, status) VALUES
+(1, 1, 3, 3, 2, 'Normalized schema design', 'Design an ERD and submit SQL create statements.', '2026-05-28', '2026-06-14', 'Online / Email', 'open'),
+(2, 1, 2, 4, 2, 'PHP dashboard project', 'Build a secure CRUD dashboard with role checks.', '2026-05-30', '2026-06-21', 'Online / Email', 'open'),
+(3, 1, 1, 4, 1, 'Algorithm practice set', 'Solve ten array and loop exercises.', '2026-05-20', '2026-06-07', 'Hard Copy', 'closed');
 
 INSERT INTO materials (course_id, module_id, uploaded_by, title, file_name, file_path, file_size, file_type, visibility) VALUES
 (1, 2, 4, 'PHP forms and PDO', 'php-forms-pdo.pdf', 'uploads/materials/php-forms-pdo.pdf', '1.8 MB', 'PDF', 'course'),
@@ -410,6 +475,28 @@ INSERT INTO timetables (course_id, module_id, lecturer_id, semester_id, day_of_w
 INSERT INTO results (student_id, course_id, module_id, semester_id, academic_year_id, uploaded_by, ca_score, exam_score, total_score, grade, status, released_at) VALUES
 (5, 1, 1, 1, 1, 4, 47, 32, 79, 'B+', 'pass', '2026-05-10 10:00:00'),
 (5, 1, 3, 2, 1, 3, 44, 36, 80, 'A', 'pass', '2026-05-25 10:00:00');
+
+INSERT INTO ca_results (id, student_id, course_id, module_id, academic_year_id, semester_id, class_group, total_ca, max_ca, lecturer_remarks) VALUES
+(1, 5, 1, 1, 1, 1, 'OD23IT', 47, 60, 'Strong practical effort. Improve speed on test questions.'),
+(2, 5, 1, 3, 1, 2, 'OD23IT', 44, 60, 'Good database design progress. Revise normalization edge cases.');
+
+INSERT INTO assessment_items (ca_result_id, item_name, score, max_score, sort_order) VALUES
+(1, 'Test 1', 8, 10, 1),
+(1, 'Test 2', 7, 10, 2),
+(1, 'Quiz', 5, 5, 3),
+(1, 'Assignment 1', 8, 10, 4),
+(1, 'Assignment 2', 7, 10, 5),
+(1, 'Group Assignment', 4, 5, 6),
+(1, 'Presentation', 4, 5, 7),
+(1, 'Practical', 4, 5, 8),
+(2, 'Test 1', 7, 10, 1),
+(2, 'Test 2', 7, 10, 2),
+(2, 'Quiz', 4, 5, 3),
+(2, 'Assignment 1', 8, 10, 4),
+(2, 'Assignment 2', 6, 10, 5),
+(2, 'Group Assignment', 4, 5, 6),
+(2, 'Presentation', 4, 5, 7),
+(2, 'Practical', 4, 5, 8);
 
 INSERT INTO announcements (course_id, module_id, department_id, created_by, audience, title, body, publish_at) VALUES
 (1, NULL, NULL, 2, 'course', 'Semester 2 timetable updated', 'The Web Application Development practical session now runs on Wednesday afternoon in Lab 1.', '2026-05-28 08:00:00'),

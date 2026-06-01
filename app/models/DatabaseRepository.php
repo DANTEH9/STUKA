@@ -27,7 +27,10 @@ final class DatabaseRepository
         $pdo->query('SELECT 1');
         $pdo->query('SELECT COUNT(*) FROM roles');
 
-        return new self($pdo);
+        $repository = new self($pdo);
+        $repository->ensureAcademicWorkflowSchema();
+
+        return $repository;
     }
 
     public function findUserByEmail(string $email): ?array
@@ -90,6 +93,13 @@ final class DatabaseRepository
                  FROM course_registrations cr
                  JOIN lecturer_courses lc ON lc.course_id = cr.course_id
                  WHERE lc.lecturer_id = :user_id AND cr.status = "approved"',
+                ['user_id' => $user['id']]
+            );
+            $stats['pending_reviews'] = $this->count(
+                'SELECT COUNT(*)
+                 FROM assignment_submissions sub
+                 JOIN assignments a ON a.id = sub.assignment_id
+                 WHERE a.lecturer_id = :user_id AND sub.reviewed_at IS NULL',
                 ['user_id' => $user['id']]
             );
         }
@@ -182,17 +192,38 @@ final class DatabaseRepository
 
     public function getAssignments(array $filters = [], ?array $user = null): array
     {
-        $sql = 'SELECT a.id, a.title, a.instructions, a.deadline, a.submission_type, a.status, a.file_path,
+        $submissionSelect = 'NULL AS submission_id, NULL AS submitted_at, NULL AS submission_status,
+                             NULL AS submission_is_late, NULL AS late_duration_minutes,
+                             NULL AS reviewed_at, NULL AS review_remarks, NULL AS student_comment';
+        $submissionJoin = '';
+
+        [$scopeSql, $scopeParams] = $this->scopeAssignmentsForUser($user);
+
+        if (($user['role'] ?? '') === 'student') {
+            $submissionSelect = 'student_sub.id AS submission_id, student_sub.submitted_at, student_sub.status AS submission_status,
+                                 student_sub.is_late AS submission_is_late, student_sub.late_duration_minutes,
+                                 student_sub.reviewed_at, student_sub.review_remarks, student_sub.student_comment';
+            $submissionJoin = ' LEFT JOIN assignment_submissions student_sub
+                                ON student_sub.assignment_id = a.id AND student_sub.student_id = :assignment_student_id';
+            $scopeParams['assignment_student_id'] = $user['id'];
+        }
+
+        $sql = 'SELECT a.id, a.course_id, a.module_id, a.lecturer_id, a.title, a.instructions,
+                       COALESCE(a.date_given, DATE(a.created_at)) AS date_given,
+                       a.deadline, a.submission_type, a.status, a.file_path,
                        c.title AS course_title, c.code AS course_code,
                        m.title AS module_name, m.code AS module_code,
-                       u.name AS lecturer, s.name AS semester
+                       u.name AS lecturer, s.name AS semester,
+                       (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id) AS submission_count,
+                       (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id AND sub.reviewed_at IS NOT NULL) AS reviewed_count,
+                       (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id AND sub.is_late = 1) AS late_count,
+                       ' . $submissionSelect . '
                 FROM assignments a
                 JOIN courses c ON c.id = a.course_id
                 LEFT JOIN modules m ON m.id = a.module_id
                 LEFT JOIN users u ON u.id = a.lecturer_id
-                LEFT JOIN semesters s ON s.id = a.semester_id';
+                LEFT JOIN semesters s ON s.id = a.semester_id' . $submissionJoin;
 
-        [$scopeSql, $scopeParams] = $this->scopeAssignmentsForUser($user);
         $filters['_where'] = $scopeSql;
         $filters['_params'] = $scopeParams;
 
@@ -201,7 +232,156 @@ final class DatabaseRepository
             $filters,
             ['module_name' => 'm.title', 'course_id' => 'a.course_id', 'semester' => 's.name', 'submission_type' => 'a.submission_type', 'status' => 'a.status'],
             ['a.title', 'm.title', 'm.code', 'c.title', 'c.code', 'u.name', 'a.instructions'],
-            'a.deadline'
+            'a.deadline, a.created_at DESC'
+        );
+    }
+
+    public function getAssignmentById(int $id, ?array $user = null): ?array
+    {
+        [$scopeSql, $params] = $this->scopeAssignmentsForUser($user);
+        $params['assignment_id'] = $id;
+        $where = ['a.id = :assignment_id'];
+
+        if ($scopeSql !== '') {
+            $where[] = '(' . $scopeSql . ')';
+        }
+
+        return $this->fetchOne(
+            'SELECT a.id, a.course_id, a.module_id, a.lecturer_id, a.title, a.instructions,
+                    COALESCE(a.date_given, DATE(a.created_at)) AS date_given,
+                    a.deadline, a.submission_type, a.status, a.file_path,
+                    c.title AS course_title, c.code AS course_code,
+                    m.title AS module_name, m.code AS module_code,
+                    u.name AS lecturer, s.name AS semester,
+                    (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id) AS submission_count,
+                    (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id AND sub.reviewed_at IS NOT NULL) AS reviewed_count,
+                    (SELECT COUNT(*) FROM assignment_submissions sub WHERE sub.assignment_id = a.id AND sub.is_late = 1) AS late_count
+             FROM assignments a
+             JOIN courses c ON c.id = a.course_id
+             LEFT JOIN modules m ON m.id = a.module_id
+             LEFT JOIN users u ON u.id = a.lecturer_id
+             LEFT JOIN semesters s ON s.id = a.semester_id
+             WHERE ' . implode(' AND ', $where) . '
+             LIMIT 1',
+            $params
+        );
+    }
+
+    public function getAssignmentSubmissions(int $assignmentId): array
+    {
+        return $this->fetchAll(
+            'SELECT student.id AS student_id, student.name AS student_name, student.email AS student_email,
+                    student.student_number, student.class_group,
+                    sub.id AS submission_id, sub.file_path, sub.original_name, sub.student_comment,
+                    sub.submitted_at, sub.status AS submission_status, sub.is_late,
+                    sub.late_duration_minutes, sub.reviewed_at, sub.review_remarks,
+                    reviewer.name AS reviewed_by_name,
+                    CASE
+                        WHEN sub.reviewed_at IS NOT NULL THEN "Reviewed"
+                        WHEN sub.id IS NOT NULL AND sub.is_late = 1 THEN "Late Submission"
+                        WHEN sub.id IS NOT NULL THEN "Submitted"
+                        WHEN NOW() > CONCAT(a.deadline, " 23:59:59") THEN "Missing"
+                        ELSE "Not Submitted"
+                    END AS workflow_status
+             FROM assignments a
+             JOIN course_registrations cr ON cr.course_id = a.course_id AND cr.status = "approved"
+             JOIN users student ON student.id = cr.user_id
+             LEFT JOIN assignment_submissions sub ON sub.assignment_id = a.id AND sub.student_id = student.id
+             LEFT JOIN users reviewer ON reviewer.id = sub.reviewed_by
+             WHERE a.id = :assignment_id
+             ORDER BY student.name',
+            ['assignment_id' => $assignmentId]
+        );
+    }
+
+    public function getSubmissionForReview(int $submissionId, ?array $user = null): ?array
+    {
+        [$scopeSql, $params] = $this->scopeAssignmentsForUser($user);
+        $params['submission_id'] = $submissionId;
+        $where = ['sub.id = :submission_id'];
+
+        if ($scopeSql !== '') {
+            $where[] = '(' . $scopeSql . ')';
+        }
+
+        return $this->fetchOne(
+            'SELECT sub.*, a.title AS assignment_title, a.course_id, a.lecturer_id,
+                    student.name AS student_name, student.student_number
+             FROM assignment_submissions sub
+             JOIN assignments a ON a.id = sub.assignment_id
+             JOIN users student ON student.id = sub.student_id
+             WHERE ' . implode(' AND ', $where) . '
+             LIMIT 1',
+            $params
+        );
+    }
+
+    public function getCaResultsForStudent(int $studentId): array
+    {
+        $results = $this->fetchAll(
+            'SELECT cr.*, c.title AS course_title, c.code AS course_code,
+                    m.title AS module_name, m.code AS module_code,
+                    ay.name AS academic_year, s.name AS semester
+             FROM ca_results cr
+             JOIN courses c ON c.id = cr.course_id
+             JOIN modules m ON m.id = cr.module_id
+             LEFT JOIN academic_years ay ON ay.id = cr.academic_year_id
+             LEFT JOIN semesters s ON s.id = cr.semester_id
+             WHERE cr.student_id = :student_id
+             ORDER BY c.title, m.title',
+            ['student_id' => $studentId]
+        );
+
+        foreach ($results as &$result) {
+            $result['items'] = $this->fetchAll(
+                'SELECT item_name, score, max_score
+                 FROM assessment_items
+                 WHERE ca_result_id = :ca_result_id
+                 ORDER BY sort_order, id',
+                ['ca_result_id' => $result['id']]
+            );
+        }
+        unset($result);
+
+        return $results;
+    }
+
+    public function getNotificationsForUser(int $userId, int $limit = 5): array
+    {
+        return $this->fetchAll(
+            'SELECT n.*, actor.name AS actor_name
+             FROM notifications n
+             LEFT JOIN users actor ON actor.id = n.actor_id
+             WHERE n.user_id = :user_id
+             ORDER BY n.created_at DESC
+             LIMIT ' . max(1, min(20, $limit)),
+            ['user_id' => $userId]
+        );
+    }
+
+    public function getRecentSubmissionsForLecturer(array $user, int $limit = 5): array
+    {
+        $where = '';
+        $params = [];
+
+        if (($user['role'] ?? '') === 'lecturer') {
+            $where = 'WHERE a.lecturer_id = :lecturer_id';
+            $params['lecturer_id'] = $user['id'];
+        }
+
+        return $this->fetchAll(
+            'SELECT sub.id, sub.submitted_at, sub.is_late, sub.late_duration_minutes, sub.reviewed_at,
+                    student.name AS student_name, student.student_number,
+                    a.id AS assignment_id, a.title AS assignment_title,
+                    c.title AS course_title, c.code AS course_code
+             FROM assignment_submissions sub
+             JOIN assignments a ON a.id = sub.assignment_id
+             JOIN courses c ON c.id = a.course_id
+             JOIN users student ON student.id = sub.student_id
+             ' . $where . '
+             ORDER BY sub.submitted_at DESC
+             LIMIT ' . max(1, min(20, $limit)),
+            $params
         );
     }
 
@@ -596,8 +776,8 @@ final class DatabaseRepository
     public function createAssignment(array $data, ?array $actor = null): void
     {
         $this->execute(
-            'INSERT INTO assignments (course_id, module_id, lecturer_id, semester_id, title, instructions, deadline, submission_type, file_path, status)
-             VALUES (:course_id, :module_id, :lecturer_id, :semester_id, :title, :instructions, :deadline, :submission_type, :file_path, :status)',
+            'INSERT INTO assignments (course_id, module_id, lecturer_id, semester_id, title, instructions, date_given, deadline, submission_type, file_path, status)
+             VALUES (:course_id, :module_id, :lecturer_id, :semester_id, :title, :instructions, :date_given, :deadline, :submission_type, :file_path, :status)',
             [
                 'course_id' => (int) $data['course_id'],
                 'module_id' => $this->nullIfEmpty($data['module_id'] ?? null),
@@ -605,6 +785,7 @@ final class DatabaseRepository
                 'semester_id' => $this->nullIfEmpty($data['semester_id'] ?? null),
                 'title' => $data['title'],
                 'instructions' => $this->nullIfEmpty($data['instructions'] ?? null),
+                'date_given' => $this->nullIfEmpty($data['date_given'] ?? date('Y-m-d')),
                 'deadline' => $data['deadline'],
                 'submission_type' => $data['submission_type'] ?? 'Online upload',
                 'file_path' => $this->nullIfEmpty($data['file_path'] ?? null),
@@ -616,18 +797,83 @@ final class DatabaseRepository
 
     public function createAssignmentSubmission(array $data, ?array $actor = null): void
     {
+        $assignment = $this->fetchOne(
+            'SELECT id, title, deadline, submission_type, status, lecturer_id
+             FROM assignments
+             WHERE id = :id
+             LIMIT 1',
+            ['id' => (int) $data['assignment_id']]
+        );
+
+        if (!$assignment) {
+            throw new RuntimeException('Selected assignment was not found.');
+        }
+
+        if (($assignment['status'] ?? '') !== 'open') {
+            throw new RuntimeException('This assignment is closed for submissions.');
+        }
+
+        if (!is_online_submission_type($assignment['submission_type'] ?? '')) {
+            throw new RuntimeException('This assignment does not accept online uploads.');
+        }
+
+        $deadlineTime = strtotime((string) $assignment['deadline'] . ' 23:59:59');
+        $lateMinutes = $deadlineTime !== false && time() > $deadlineTime ? (int) floor((time() - $deadlineTime) / 60) : 0;
+        $isLate = $lateMinutes > 0 ? 1 : 0;
+
         $this->execute(
-            'INSERT INTO assignment_submissions (assignment_id, student_id, file_path, original_name, status)
-             VALUES (:assignment_id, :student_id, :file_path, :original_name, "submitted")
-             ON DUPLICATE KEY UPDATE file_path = VALUES(file_path), original_name = VALUES(original_name), submitted_at = CURRENT_TIMESTAMP, status = "resubmitted"',
+            'INSERT INTO assignment_submissions (assignment_id, student_id, file_path, original_name, student_comment, is_late, late_duration_minutes, status)
+             VALUES (:assignment_id, :student_id, :file_path, :original_name, :student_comment, :is_late, :late_duration_minutes, "submitted")
+             ON DUPLICATE KEY UPDATE file_path = VALUES(file_path),
+                                     original_name = VALUES(original_name),
+                                     student_comment = VALUES(student_comment),
+                                     submitted_at = CURRENT_TIMESTAMP,
+                                     is_late = VALUES(is_late),
+                                     late_duration_minutes = VALUES(late_duration_minutes),
+                                     reviewed_by = NULL,
+                                     reviewed_at = NULL,
+                                     review_remarks = NULL,
+                                     status = "resubmitted"',
             [
                 'assignment_id' => (int) $data['assignment_id'],
                 'student_id' => (int) $data['student_id'],
                 'file_path' => $data['file_path'],
                 'original_name' => $data['original_name'],
+                'student_comment' => $this->nullIfEmpty($data['student_comment'] ?? null),
+                'is_late' => $isLate,
+                'late_duration_minutes' => $lateMinutes,
             ]
         );
+
+        if (!empty($assignment['lecturer_id']) && (int) $assignment['lecturer_id'] !== (int) ($actor['id'] ?? 0)) {
+            $this->createNotification(
+                (int) $assignment['lecturer_id'],
+                $actor['id'] ?? null,
+                'assignment_submissions',
+                (int) $assignment['id'],
+                'New assignment submission',
+                ($actor['name'] ?? 'A student') . ' submitted "' . $assignment['title'] . '".'
+            );
+        }
+
         $this->logActivity($actor, 'submitted assignment', 'assignment_submissions', null);
+    }
+
+    public function markSubmissionReviewed(int $submissionId, ?array $actor = null, ?string $remarks = null): void
+    {
+        $this->execute(
+            'UPDATE assignment_submissions
+             SET reviewed_by = :reviewed_by,
+                 reviewed_at = COALESCE(reviewed_at, CURRENT_TIMESTAMP),
+                 review_remarks = COALESCE(:review_remarks, review_remarks)
+             WHERE id = :id',
+            [
+                'reviewed_by' => $actor['id'] ?? null,
+                'review_remarks' => $this->nullIfEmpty($remarks),
+                'id' => $submissionId,
+            ]
+        );
+        $this->logActivity($actor, 'reviewed assignment submission', 'assignment_submissions', $submissionId);
     }
 
     public function createMaterial(array $data, ?array $actor = null): void
@@ -743,6 +989,93 @@ final class DatabaseRepository
             ['setting_value' => $value, 'setting_key' => $key]
         );
         $this->logActivity($actor, 'updated setting ' . $key, 'settings', null);
+    }
+
+    private function ensureAcademicWorkflowSchema(): void
+    {
+        $this->ensureColumn('assignments', 'date_given', 'date_given DATE NULL AFTER instructions');
+        $this->execute('UPDATE assignments SET date_given = DATE(created_at) WHERE date_given IS NULL');
+
+        $this->ensureColumn('assignment_submissions', 'student_comment', 'student_comment TEXT NULL AFTER original_name');
+        $this->ensureColumn('assignment_submissions', 'is_late', 'is_late TINYINT(1) NOT NULL DEFAULT 0 AFTER submitted_at');
+        $this->ensureColumn('assignment_submissions', 'late_duration_minutes', 'late_duration_minutes INT UNSIGNED NOT NULL DEFAULT 0 AFTER is_late');
+        $this->ensureColumn('assignment_submissions', 'reviewed_by', 'reviewed_by INT UNSIGNED NULL AFTER feedback');
+        $this->ensureColumn('assignment_submissions', 'reviewed_at', 'reviewed_at DATETIME NULL AFTER reviewed_by');
+        $this->ensureColumn('assignment_submissions', 'review_remarks', 'review_remarks TEXT NULL AFTER reviewed_at');
+
+        $this->pdo->exec(
+            'CREATE TABLE IF NOT EXISTS ca_results (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                student_id INT UNSIGNED NOT NULL,
+                course_id INT UNSIGNED NOT NULL,
+                module_id INT UNSIGNED NOT NULL,
+                academic_year_id INT UNSIGNED NULL,
+                semester_id INT UNSIGNED NULL,
+                class_group VARCHAR(80) NULL,
+                total_ca DECIMAL(5,2) NOT NULL DEFAULT 0,
+                max_ca DECIMAL(5,2) NOT NULL DEFAULT 60,
+                lecturer_remarks TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_ca_result (student_id, module_id, academic_year_id, semester_id, class_group),
+                INDEX idx_ca_results_student (student_id),
+                INDEX idx_ca_results_module (module_id),
+                CONSTRAINT fk_ca_results_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ca_results_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ca_results_module FOREIGN KEY (module_id) REFERENCES modules(id) ON DELETE CASCADE,
+                CONSTRAINT fk_ca_results_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE SET NULL,
+                CONSTRAINT fk_ca_results_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB'
+        );
+
+        $this->pdo->exec(
+            'CREATE TABLE IF NOT EXISTS assessment_items (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                ca_result_id INT UNSIGNED NOT NULL,
+                item_name VARCHAR(120) NOT NULL,
+                score DECIMAL(5,2) NOT NULL DEFAULT 0,
+                max_score DECIMAL(5,2) NOT NULL DEFAULT 0,
+                sort_order TINYINT UNSIGNED NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY unique_ca_item (ca_result_id, item_name),
+                INDEX idx_assessment_items_result (ca_result_id),
+                CONSTRAINT fk_assessment_items_result FOREIGN KEY (ca_result_id) REFERENCES ca_results(id) ON DELETE CASCADE
+            ) ENGINE=InnoDB'
+        );
+
+        $this->pdo->exec(
+            'CREATE TABLE IF NOT EXISTS notifications (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                actor_id INT UNSIGNED NULL,
+                entity_type VARCHAR(80) NOT NULL,
+                entity_id INT UNSIGNED NULL,
+                title VARCHAR(190) NOT NULL,
+                body TEXT NOT NULL,
+                is_read TINYINT(1) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_notifications_user (user_id, is_read, created_at),
+                CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_notifications_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB'
+        );
+    }
+
+    private function ensureColumn(string $table, string $column, string $definition): void
+    {
+        $exists = $this->fetchOne(
+            'SELECT COLUMN_NAME
+             FROM INFORMATION_SCHEMA.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table AND COLUMN_NAME = :column
+             LIMIT 1',
+            ['table' => $table, 'column' => $column]
+        );
+
+        if (!$exists) {
+            $this->pdo->exec('ALTER TABLE `' . str_replace('`', '``', $table) . '` ADD COLUMN ' . $definition);
+        }
     }
 
     private function queryWithFilters(string $sql, array $filters, array $exactFields, array $searchFields, string $orderBy): array
@@ -865,6 +1198,22 @@ final class DatabaseRepository
             $score >= 50 => 'C',
             default => 'F',
         };
+    }
+
+    private function createNotification(int $userId, ?int $actorId, string $entityType, ?int $entityId, string $title, string $body): void
+    {
+        $this->execute(
+            'INSERT INTO notifications (user_id, actor_id, entity_type, entity_id, title, body)
+             VALUES (:user_id, :actor_id, :entity_type, :entity_id, :title, :body)',
+            [
+                'user_id' => $userId,
+                'actor_id' => $actorId,
+                'entity_type' => $entityType,
+                'entity_id' => $entityId,
+                'title' => $title,
+                'body' => $body,
+            ]
+        );
     }
 
     private function logActivity(?array $actor, string $action, string $entityType, ?int $entityId): void

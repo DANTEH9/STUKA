@@ -13,6 +13,8 @@ $announcements = array_slice($repo->getAnnouncements([], $user), 0, 3);
 $assignments = array_slice($repo->getAssignments([], $user), 0, 4);
 $materials = array_slice($repo->getMaterials([], $user), 0, 4);
 $registrations = array_slice($repo->getCourseRegistrations(['status' => 'pending'], $user), 0, 4);
+$notifications = can_upload_teaching_files($role) ? $repo->getNotificationsForUser((int) $user['id'], 4) : [];
+$recentSubmissions = can_upload_teaching_files($role) ? $repo->getRecentSubmissionsForLecturer($user, 4) : [];
 
 $cardsByRole = [
     'super_admin' => [
@@ -39,7 +41,7 @@ $cardsByRole = [
         ['label' => 'Assigned courses', 'value' => $stats['assigned_courses'] ?? 0, 'meta' => 'Teaching load'],
         ['label' => 'Enrolled students', 'value' => $stats['enrolled_students'] ?? 0, 'meta' => 'Approved registrations'],
         ['label' => 'Assignments', 'value' => $stats['total_assignments'], 'meta' => 'Published work'],
-        ['label' => 'Materials', 'value' => $stats['materials'], 'meta' => 'Uploaded resources'],
+        ['label' => 'Pending reviews', 'value' => $stats['pending_reviews'] ?? 0, 'meta' => 'Submissions needing review'],
     ],
     'student' => [
         ['label' => 'Registered courses', 'value' => $stats['registered_courses'] ?? 0, 'meta' => 'Approved courses'],
@@ -133,6 +135,54 @@ page_start('Dashboard', 'dashboard');
         </div>
     </article>
 </section>
+
+<?php if (can_upload_teaching_files($role)): ?>
+<section class="dashboard-grid">
+    <article class="panel">
+        <div class="panel-heading">
+            <h2>Submission notifications</h2>
+            <a href="assignments.php">Assignments</a>
+        </div>
+        <div class="list-stack">
+            <?php foreach ($notifications as $notification): ?>
+                <a class="list-item" href="assignments.php">
+                    <span>
+                        <strong><?= e($notification['title']) ?></strong>
+                        <small><?= e($notification['body']) ?> - <?= e(display_datetime($notification['created_at'])) ?></small>
+                    </span>
+                    <span class="pill <?= (int) $notification['is_read'] === 1 ? 'soft' : 'warning' ?>"><?= (int) $notification['is_read'] === 1 ? 'Read' : 'New' ?></span>
+                </a>
+            <?php endforeach; ?>
+            <?php if ($notifications === []): ?>
+                <div class="mini-empty">No submission notifications yet.</div>
+            <?php endif; ?>
+        </div>
+    </article>
+
+    <article class="panel">
+        <div class="panel-heading">
+            <h2>Recent submissions</h2>
+            <a href="assignments.php">View assignments</a>
+        </div>
+        <div class="list-stack">
+            <?php foreach ($recentSubmissions as $submission): ?>
+                <a class="list-item" href="submissions.php?assignment_id=<?= e($submission['assignment_id']) ?>">
+                    <span>
+                        <strong><?= e($submission['student_name']) ?></strong>
+                        <small><?= e($submission['assignment_title']) ?> - <?= e(display_datetime($submission['submitted_at'])) ?></small>
+                    </span>
+                    <span class="pill <?= !empty($submission['reviewed_at']) ? 'success' : ((int) $submission['is_late'] === 1 ? 'danger' : 'soft') ?>">
+                        <?= !empty($submission['reviewed_at']) ? 'Reviewed' : ((int) $submission['is_late'] === 1 ? 'Late' : 'Submitted') ?>
+                    </span>
+                </a>
+            <?php endforeach; ?>
+            <?php if ($recentSubmissions === []): ?>
+                <div class="mini-empty">No assignment submissions have arrived yet.</div>
+            <?php endif; ?>
+        </div>
+    </article>
+</section>
+<?php endif; ?>
 
 <section class="panel">
     <div class="panel-heading">

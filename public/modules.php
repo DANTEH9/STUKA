@@ -41,6 +41,14 @@ $filters = [
 ];
 $modules = $repo->getModules($filters);
 $pagination = paginate($modules, (int) request_value('page', '1'), app_config('items_per_page'));
+$caResultsByModule = [];
+$caModals = [];
+
+if ($user['role'] === 'student') {
+    foreach ($repo->getCaResultsForStudent((int) $user['id']) as $caResult) {
+        $caResultsByModule[(int) $caResult['module_id']] = $caResult;
+    }
+}
 
 page_start('Modules', 'modules');
 ?>
@@ -113,11 +121,15 @@ page_start('Modules', 'modules');
                     <th>Lecturer</th>
                     <th>Semester</th>
                     <th>Credits</th>
+                    <?php if ($user['role'] === 'student'): ?>
+                        <th>CA Results</th>
+                    <?php endif; ?>
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 <?php foreach ($pagination['items'] as $module): ?>
+                    <?php $caResult = $caResultsByModule[(int) $module['id']] ?? null; ?>
                     <tr>
                         <td>
                             <strong><?= e($module['module_name']) ?> <small>(<?= e($module['code']) ?>)</small></strong>
@@ -130,6 +142,18 @@ page_start('Modules', 'modules');
                         <td><?= e($module['lecturer']) ?></td>
                         <td><?= e($module['semester']) ?></td>
                         <td><?= e($module['credits']) ?></td>
+                        <?php if ($user['role'] === 'student'): ?>
+                            <td>
+                                <?php if ($caResult): ?>
+                                    <?php $modalId = 'ca-modal-' . (int) $caResult['id']; $caModals[$modalId] = $caResult; ?>
+                                    <button class="button subtle" type="button" data-modal-open="<?= e($modalId) ?>">
+                                        <?= e((float) $caResult['total_ca']) ?>/<?= e((float) $caResult['max_ca']) ?> - View CA Results
+                                    </button>
+                                <?php else: ?>
+                                    <span class="muted-text">Not released</span>
+                                <?php endif; ?>
+                            </td>
+                        <?php endif; ?>
                         <td class="action-cell">
                             <a class="button subtle" href="assignments.php?search=<?= e(urlencode($module['module_name'])) ?>">Assignments</a>
                             <a class="button quiet" href="materials.php?search=<?= e(urlencode($module['module_name'])) ?>">Materials</a>
@@ -140,6 +164,35 @@ page_start('Modules', 'modules');
         </table>
     </div>
 </section>
+
+<?php foreach ($caModals as $modalId => $caResult): ?>
+    <div class="modal-backdrop" id="<?= e($modalId) ?>" data-modal hidden>
+        <section class="modal-card">
+            <div class="modal-header">
+                <div>
+                    <h2><?= e($caResult['module_name']) ?> CA Breakdown</h2>
+                    <span class="table-note"><?= e($caResult['course_code']) ?> - <?= e($caResult['class_group'] ?: ($user['class_group'] ?? 'Class')) ?> - <?= e($caResult['semester'] ?? '') ?></span>
+                </div>
+                <button class="button quiet" type="button" data-modal-close>Close</button>
+            </div>
+            <div class="modal-body">
+                <div class="ca-grid">
+                    <?php foreach ($caResult['items'] as $item): ?>
+                        <div class="ca-row">
+                            <span><?= e($item['item_name']) ?></span>
+                            <strong><?= e((float) $item['score']) ?>/<?= e((float) $item['max_score']) ?></strong>
+                        </div>
+                    <?php endforeach; ?>
+                    <div class="ca-row total">
+                        <span>Total CA</span>
+                        <strong><?= e((float) $caResult['total_ca']) ?>/<?= e((float) $caResult['max_ca']) ?></strong>
+                    </div>
+                </div>
+                <p class="muted modal-note"><?= e($caResult['lecturer_remarks'] ?: 'No lecturer remarks recorded.') ?></p>
+            </div>
+        </section>
+    </div>
+<?php endforeach; ?>
 <?php
 pagination_controls($pagination);
 page_end();
