@@ -70,6 +70,16 @@ $filters = [
 $assignments = $repo->getAssignments($filters, $user);
 $pagination = paginate($assignments, (int) request_value('page', '1'), app_config('items_per_page'));
 $submissionModals = [];
+$assignmentMetrics = [
+    'total' => count($assignments),
+    'open' => count(array_filter($assignments, static fn (array $assignment): bool => ($assignment['status'] ?? '') === 'open')),
+    'due_soon' => count(array_filter($assignments, static function (array $assignment): bool {
+        $deadline = strtotime((string) ($assignment['deadline'] ?? ''));
+        return $deadline !== false && $deadline >= strtotime('today') && $deadline <= strtotime('+7 days');
+    })),
+    'submissions' => array_sum(array_map(static fn (array $assignment): int => (int) ($assignment['submission_count'] ?? 0), $assignments)),
+    'reviewed' => array_sum(array_map(static fn (array $assignment): int => (int) ($assignment['reviewed_count'] ?? 0), $assignments)),
+];
 
 page_start('Assignments', 'assignments');
 ?>
@@ -78,11 +88,44 @@ page_start('Assignments', 'assignments');
         <h2>Assignments</h2>
         <p>Create deadlines, attach instructions, and let students submit work securely.</p>
     </div>
+    <?php if (can_upload_teaching_files($user['role'])): ?>
+        <div class="hero-actions">
+            <a class="button primary" href="#create-assignment">Create Assignment</a>
+        </div>
+    <?php endif; ?>
 </section>
 
 <?php if (can_upload_teaching_files($user['role'])): ?>
-<section class="panel compact">
-    <div class="panel-heading"><h2>Create assignment</h2></div>
+<section class="stats-grid lms-stats">
+    <article class="stat-card">
+        <span>Total assignments</span>
+        <strong><?= e((string) $assignmentMetrics['total']) ?></strong>
+        <small>Visible in your teaching scope</small>
+    </article>
+    <article class="stat-card">
+        <span>Open tasks</span>
+        <strong><?= e((string) $assignmentMetrics['open']) ?></strong>
+        <small>Accepting submissions</small>
+    </article>
+    <article class="stat-card">
+        <span>Due this week</span>
+        <strong><?= e((string) $assignmentMetrics['due_soon']) ?></strong>
+        <small>Deadline pressure</small>
+    </article>
+    <article class="stat-card">
+        <span>Reviewed</span>
+        <strong><?= e((string) $assignmentMetrics['reviewed']) ?>/<?= e((string) $assignmentMetrics['submissions']) ?></strong>
+        <small>Submission review progress</small>
+    </article>
+</section>
+
+<section class="panel compact lms-panel" id="create-assignment">
+    <div class="panel-heading">
+        <div>
+            <h2>Create assignment</h2>
+            <span class="table-note">Publish coursework with clear dates, submission method, and optional attachment.</span>
+        </div>
+    </div>
     <form method="post" enctype="multipart/form-data" class="form-grid">
         <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
         <input type="hidden" name="action" value="create">
@@ -143,7 +186,7 @@ page_start('Assignments', 'assignments');
 </section>
 <?php endif; ?>
 
-<section class="page-toolbar">
+<section class="page-toolbar lms-toolbar">
     <form method="get" class="filter-bar">
         <select name="course_id" aria-label="Course">
             <option value="">All courses</option>
@@ -167,12 +210,12 @@ page_start('Assignments', 'assignments');
     </form>
 </section>
 
-<section class="panel table-panel">
+<section class="panel table-panel lms-panel">
     <div class="table-actions">
         <span><?= e($pagination['total']) ?> assignments</span>
     </div>
     <div class="responsive-table">
-        <table>
+        <table class="lms-table">
             <thead>
                 <tr>
                     <th>Assignment</th>
@@ -236,8 +279,14 @@ page_start('Assignments', 'assignments');
 </section>
 
 <?php foreach ($submissionModals as $modalId => $assignment): ?>
+    <?php
+    $deadlineTime = strtotime((string) ($assignment['deadline'] ?? '') . ' 23:59:59');
+    $isPastDeadline = $deadlineTime !== false && $deadlineTime < time();
+    $deadlineLabel = $isPastDeadline ? 'Past deadline' : 'Accepting uploads';
+    $deadlineClass = $isPastDeadline ? 'danger' : 'success';
+    ?>
     <div class="modal-backdrop" id="<?= e($modalId) ?>" data-modal hidden>
-        <section class="modal-card">
+        <section class="modal-card upload-modal">
             <div class="modal-header">
                 <div>
                     <h2><?= e($assignment['title']) ?></h2>
@@ -250,9 +299,24 @@ page_start('Assignments', 'assignments');
                     <input type="hidden" name="csrf_token" value="<?= e(csrf_token()) ?>">
                     <input type="hidden" name="action" value="submit">
                     <input type="hidden" name="assignment_id" value="<?= e($assignment['id']) ?>">
+                    <div class="assignment-info-grid">
+                        <div class="assignment-info-card">
+                            <span>Assignment information</span>
+                            <strong><?= e($assignment['course_code']) ?> - <?= e($assignment['module_name'] ?: $assignment['course_title']) ?></strong>
+                            <small><?= e($assignment['instructions'] ?: 'No extra instructions recorded.') ?></small>
+                        </div>
+                        <div class="deadline-card <?= e($deadlineClass) ?>">
+                            <span>Deadline status</span>
+                            <strong><?= e($deadlineLabel) ?></strong>
+                            <small>Due <?= e(display_date($assignment['deadline'])) ?></small>
+                        </div>
+                    </div>
+                    <p class="deadline-warning <?= e($deadlineClass) ?>">
+                        <?= $isPastDeadline ? 'Submitting now will be recorded as late.' : 'Submit before the deadline to avoid a late-submission badge.' ?>
+                    </p>
                     <label class="drop-zone" data-drop-zone>
                         <strong>Drop assignment file here</strong>
-                        <span data-file-name>PDF, DOCX, PPT/PPTX, ZIP, or image</span>
+                        <span data-file-name>Accepted file formats: PDF, DOCX, PPT/PPTX, ZIP, or image</span>
                         <input type="file" name="submission_file" accept=".pdf,.doc,.docx,.ppt,.pptx,.zip,.jpg,.jpeg,.png" required>
                     </label>
                     <label class="stacked-form modal-note">

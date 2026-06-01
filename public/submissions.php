@@ -40,12 +40,41 @@ if (!$assignment) {
     exit;
 }
 
-$submissions = $repo->getAssignmentSubmissions($assignmentId);
-$submittedCount = count(array_filter($submissions, static fn (array $row): bool => !empty($row['submission_id'])));
-$reviewedCount = count(array_filter($submissions, static fn (array $row): bool => !empty($row['reviewed_at'])));
-$lateCount = count(array_filter($submissions, static fn (array $row): bool => (int) ($row['is_late'] ?? 0) === 1));
-$missingCount = count(array_filter($submissions, static fn (array $row): bool => ($row['workflow_status'] ?? '') === 'Missing'));
+$allSubmissions = $repo->getAssignmentSubmissions($assignmentId);
+$submissionFilters = [
+    'status' => request_value('status'),
+    'search' => request_value('search'),
+];
+$submittedCount = count(array_filter($allSubmissions, static fn (array $row): bool => !empty($row['submission_id'])));
+$reviewedCount = count(array_filter($allSubmissions, static fn (array $row): bool => !empty($row['reviewed_at'])));
+$lateCount = count(array_filter($allSubmissions, static fn (array $row): bool => (int) ($row['is_late'] ?? 0) === 1));
+$missingCount = count(array_filter($allSubmissions, static fn (array $row): bool => ($row['workflow_status'] ?? '') === 'Missing'));
 $notReviewedCount = max(0, $submittedCount - $reviewedCount);
+$submissions = array_values(array_filter($allSubmissions, static function (array $row) use ($submissionFilters): bool {
+    if ($submissionFilters['search'] !== '') {
+        $haystack = strtolower(implode(' ', [
+            $row['student_name'] ?? '',
+            $row['student_number'] ?? '',
+            $row['student_email'] ?? '',
+            $row['original_name'] ?? '',
+            $row['student_comment'] ?? '',
+        ]));
+
+        if (!str_contains($haystack, strtolower($submissionFilters['search']))) {
+            return false;
+        }
+    }
+
+    return match ($submissionFilters['status']) {
+        'submitted' => !empty($row['submission_id']),
+        'reviewed' => !empty($row['reviewed_at']),
+        'not_reviewed' => !empty($row['submission_id']) && empty($row['reviewed_at']),
+        'late' => (int) ($row['is_late'] ?? 0) === 1,
+        'missing' => ($row['workflow_status'] ?? '') === 'Missing',
+        'not_submitted' => empty($row['submission_id']),
+        default => true,
+    };
+}));
 
 page_start('Submissions', 'assignments');
 ?>
@@ -59,21 +88,53 @@ page_start('Submissions', 'assignments');
     </div>
 </section>
 
-<section class="panel compact">
-    <div class="review-summary">
-        <span class="pill success"><?= e((string) $reviewedCount) ?> Reviewed</span>
-        <span class="pill warning"><?= e((string) $notReviewedCount) ?> Not Reviewed</span>
-        <span class="pill danger"><?= e((string) $lateCount) ?> Late</span>
-        <span class="pill soft"><?= e((string) $missingCount) ?> Missing</span>
-    </div>
+<section class="stats-grid lms-stats">
+    <article class="stat-card">
+        <span>Submitted</span>
+        <strong><?= e((string) $submittedCount) ?></strong>
+        <small><?= e((string) count($allSubmissions)) ?> expected learners</small>
+    </article>
+    <article class="stat-card">
+        <span>Reviewed</span>
+        <strong><?= e((string) $reviewedCount) ?></strong>
+        <small>Marked by lecturer</small>
+    </article>
+    <article class="stat-card">
+        <span>Not reviewed</span>
+        <strong><?= e((string) $notReviewedCount) ?></strong>
+        <small>Needs lecturer action</small>
+    </article>
+    <article class="stat-card">
+        <span>Late or missing</span>
+        <strong><?= e((string) ($lateCount + $missingCount)) ?></strong>
+        <small><?= e((string) $lateCount) ?> late / <?= e((string) $missingCount) ?> missing</small>
+    </article>
 </section>
 
-<section class="panel table-panel">
+<section class="page-toolbar lms-toolbar">
+    <form method="get" class="filter-bar submission-filter-bar">
+        <input type="hidden" name="assignment_id" value="<?= e($assignmentId) ?>">
+        <select name="status" aria-label="Submission status">
+            <option value="">All submissions</option>
+            <option value="submitted" <?= selected($submissionFilters['status'], 'submitted') ?>>Submitted</option>
+            <option value="reviewed" <?= selected($submissionFilters['status'], 'reviewed') ?>>Reviewed</option>
+            <option value="not_reviewed" <?= selected($submissionFilters['status'], 'not_reviewed') ?>>Not reviewed</option>
+            <option value="late" <?= selected($submissionFilters['status'], 'late') ?>>Late</option>
+            <option value="missing" <?= selected($submissionFilters['status'], 'missing') ?>>Missing</option>
+            <option value="not_submitted" <?= selected($submissionFilters['status'], 'not_submitted') ?>>Not submitted</option>
+        </select>
+        <input type="search" name="search" value="<?= e($submissionFilters['search']) ?>" placeholder="Search student, ID, file, or comment">
+        <button class="button yellow" type="submit">Search</button>
+        <a class="button quiet" href="submissions.php?assignment_id=<?= e($assignmentId) ?>">Reset</a>
+    </form>
+</section>
+
+<section class="panel table-panel lms-panel">
     <div class="table-actions">
-        <span><?= e((string) count($submissions)) ?> expected submissions</span>
+        <span><?= e((string) count($submissions)) ?> visible / <?= e((string) count($allSubmissions)) ?> expected submissions</span>
     </div>
     <div class="responsive-table">
-        <table>
+        <table class="lms-table">
             <thead>
                 <tr>
                     <th>Student</th>
@@ -142,6 +203,11 @@ page_start('Submissions', 'assignments');
                         </td>
                     </tr>
                 <?php endforeach; ?>
+                <?php if ($submissions === []): ?>
+                    <tr>
+                        <td colspan="7"><span class="muted-text">No submissions match the current filters.</span></td>
+                    </tr>
+                <?php endif; ?>
             </tbody>
         </table>
     </div>

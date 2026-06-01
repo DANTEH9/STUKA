@@ -67,6 +67,7 @@ final class DemoRepository
             'total_students' => count(array_filter($this->data['users'], static fn (array $row): bool => $row['role'] === 'student')),
             'total_lecturers' => count(array_filter($this->data['users'], static fn (array $row): bool => $row['role'] === 'lecturer')),
             'total_courses' => count($this->data['courses']),
+            'active_courses' => count(array_filter($this->data['courses'], static fn (array $row): bool => ($row['status'] ?? '') === 'active')),
             'total_departments' => count($this->data['departments']),
             'total_assignments' => count($this->data['assignments']),
             'total_announcements' => count($this->data['announcements']),
@@ -74,6 +75,8 @@ final class DemoRepository
             'materials' => count($this->data['materials']),
             'past_papers' => count($this->data['past_papers']),
             'modules' => count($this->data['modules']),
+            'total_modules' => count($this->data['modules']),
+            'active_class_representatives' => count(array_filter($this->data['class_representatives'] ?? [], static fn (array $row): bool => ($row['status'] ?? '') === 'active')),
             'activity_logs' => count($this->data['activity_logs']),
             'average' => $average,
             'registered_courses' => count(array_filter($this->data['registrations'], static fn (array $row): bool => (int) $row['user_id'] === (int) ($user['id'] ?? 0) && $row['status'] === 'approved')),
@@ -307,6 +310,128 @@ final class DemoRepository
     public function getStudentOptions(): array
     {
         return array_values(array_filter($this->data['users'], static fn (array $user): bool => $user['role'] === 'student'));
+    }
+
+    public function getDefaultClassRepresentativeScope(): array
+    {
+        foreach ($this->data['class_representatives'] ?? [] as $record) {
+            if (($record['status'] ?? '') === 'active') {
+                return [
+                    'department_id' => $record['department_id'] ?? '',
+                    'course_id' => $record['course_id'] ?? '',
+                    'academic_year_id' => $record['academic_year_id'] ?? '',
+                    'semester_id' => $record['semester_id'] ?? '',
+                    'study_year' => $record['study_year'] ?? '2nd Year',
+                ];
+            }
+        }
+
+        return ['department_id' => 1, 'course_id' => 1, 'academic_year_id' => 1, 'semester_id' => 2, 'study_year' => '2nd Year'];
+    }
+
+    public function getCurrentClassRepresentative(array $filters): ?array
+    {
+        foreach ($this->data['class_representatives'] ?? [] as $record) {
+            if (($record['status'] ?? '') !== 'active') {
+                continue;
+            }
+
+            if (!empty($_SESSION['demo_inactive_cr'][(int) ($record['id'] ?? 0)])) {
+                continue;
+            }
+
+            if ((string) ($record['course_id'] ?? '') === (string) ($filters['course_id'] ?? '')
+                && (string) ($record['academic_year_id'] ?? '') === (string) ($filters['academic_year_id'] ?? '')
+                && (string) ($record['semester_id'] ?? '') === (string) ($filters['semester_id'] ?? '')
+                && (string) ($record['study_year'] ?? '') === (string) ($filters['study_year'] ?? '')) {
+                $student = $this->recordById('users', (int) $record['student_id']);
+                $course = $this->recordById('courses', (int) $record['course_id']);
+                $year = $this->recordById('academic_years', (int) $record['academic_year_id']);
+                $semester = $this->recordById('semesters', (int) $record['semester_id']);
+
+                return $record + [
+                    'student_id' => $student['id'] ?? '',
+                    'name' => $student['name'] ?? '',
+                    'email' => $student['email'] ?? '',
+                    'student_number' => $student['student_number'] ?? '',
+                    'phone' => $student['phone'] ?? '',
+                    'program' => $student['program'] ?? '',
+                    'class_group' => $student['class_group'] ?? '',
+                    'department_name' => $student['department_name'] ?? '',
+                    'course_title' => $course['title'] ?? '',
+                    'course_code' => $course['code'] ?? '',
+                    'academic_year' => $year['name'] ?? '',
+                    'semester' => $semester['name'] ?? '',
+                    'assigned_by_name' => 'Academic Office',
+                ];
+            }
+        }
+
+        return null;
+    }
+
+    public function getClassRepresentativeStudents(array $filters): array
+    {
+        $students = [];
+        $current = $this->getCurrentClassRepresentative($filters);
+        foreach ($this->data['registrations'] as $registration) {
+            if (($registration['status'] ?? '') !== 'approved'
+                || (string) ($registration['course_id'] ?? '') !== (string) ($filters['course_id'] ?? '')
+                || (string) ($registration['academic_year_id'] ?? '1') !== (string) ($filters['academic_year_id'] ?? '')
+                || (string) ($registration['semester_id'] ?? '2') !== (string) ($filters['semester_id'] ?? '')) {
+                continue;
+            }
+
+            $student = $this->recordById('users', (int) $registration['user_id']);
+            if (!$student) {
+                continue;
+            }
+
+            if (!empty($filters['search'])) {
+                $haystack = strtolower(implode(' ', [
+                    $student['name'] ?? '',
+                    $student['email'] ?? '',
+                    $student['student_number'] ?? '',
+                    $student['phone'] ?? '',
+                    $student['class_group'] ?? '',
+                ]));
+                if (!str_contains($haystack, strtolower((string) $filters['search']))) {
+                    continue;
+                }
+            }
+
+            $students[] = $student + [
+                'course_title' => $registration['course_title'] ?? '',
+                'course_code' => $registration['course_code'] ?? '',
+                'academic_year' => $registration['academic_year'] ?? '',
+                'semester' => $registration['semester'] ?? '',
+                'active_cr_id' => $current && (int) ($current['student_id'] ?? 0) === (int) $student['id'] ? $current['id'] : null,
+            ];
+        }
+
+        return $students;
+    }
+
+    public function assignClassRepresentative(array $data, ?array $actor = null): void
+    {
+        $this->remember('class_representatives', [
+            'id' => $this->nextId('class_representatives'),
+            'department_id' => $data['department_id'] ?? '',
+            'course_id' => $data['course_id'] ?? '',
+            'academic_year_id' => $data['academic_year_id'] ?? '',
+            'semester_id' => $data['semester_id'] ?? '',
+            'study_year' => $data['study_year'] ?? '',
+            'student_id' => $data['student_id'] ?? '',
+            'assigned_by' => $actor['id'] ?? '',
+            'status' => 'active',
+            'assigned_at' => date('Y-m-d H:i:s'),
+        ], $actor, 'assigned class representative');
+    }
+
+    public function unassignClassRepresentative(int $id, ?array $actor = null): void
+    {
+        $_SESSION['demo_inactive_cr'][$id] = true;
+        $this->rememberLog($actor, 'unassigned class representative', 'class_representatives');
     }
 
     public function createUser(array $data, ?array $actor = null): void

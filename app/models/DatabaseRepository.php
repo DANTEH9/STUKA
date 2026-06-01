@@ -65,6 +65,7 @@ final class DatabaseRepository
             'total_students' => $this->count('SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "student"'),
             'total_lecturers' => $this->count('SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.slug = "lecturer"'),
             'total_courses' => $this->count('SELECT COUNT(*) FROM courses'),
+            'active_courses' => $this->count('SELECT COUNT(*) FROM courses WHERE status = "active"'),
             'total_departments' => $this->count('SELECT COUNT(*) FROM departments'),
             'total_assignments' => $this->count('SELECT COUNT(*) FROM assignments'),
             'total_announcements' => $this->count('SELECT COUNT(*) FROM announcements'),
@@ -72,6 +73,8 @@ final class DatabaseRepository
             'materials' => $this->count('SELECT COUNT(*) FROM materials'),
             'past_papers' => $this->count('SELECT COUNT(*) FROM past_papers'),
             'modules' => $this->count('SELECT COUNT(*) FROM modules'),
+            'total_modules' => $this->count('SELECT COUNT(*) FROM modules'),
+            'active_class_representatives' => $this->count('SELECT COUNT(*) FROM class_representatives WHERE status = "active"'),
             'activity_logs' => $this->count('SELECT COUNT(*) FROM activity_logs'),
             'average' => $this->averageForUser($user),
         ];
@@ -614,7 +617,7 @@ final class DatabaseRepository
 
     public function getCourseOptions(): array
     {
-        return $this->fetchAll('SELECT id, code, title FROM courses ORDER BY title');
+        return $this->fetchAll('SELECT id, department_id, code, title FROM courses ORDER BY title');
     }
 
     public function getModuleOptions(): array
@@ -629,7 +632,7 @@ final class DatabaseRepository
 
     public function getSemesterOptions(): array
     {
-        return $this->fetchAll('SELECT s.id, s.name, ay.name AS academic_year FROM semesters s JOIN academic_years ay ON ay.id = s.academic_year_id ORDER BY ay.starts_on DESC, s.starts_on');
+        return $this->fetchAll('SELECT s.id, s.academic_year_id, s.name, s.is_current, ay.name AS academic_year FROM semesters s JOIN academic_years ay ON ay.id = s.academic_year_id ORDER BY ay.starts_on DESC, s.is_current DESC, s.starts_on');
     }
 
     public function getLecturerOptions(): array
@@ -650,6 +653,216 @@ final class DatabaseRepository
              WHERE r.slug = "student"
              ORDER BY u.name'
         );
+    }
+
+    public function getDefaultClassRepresentativeScope(): array
+    {
+        $active = $this->fetchOne(
+            'SELECT COALESCE(cr.department_id, u.department_id, c.department_id) AS department_id,
+                    cr.course_id, cr.academic_year_id, cr.semester_id, cr.study_year
+             FROM class_representatives cr
+             JOIN users u ON u.id = cr.student_id
+             JOIN courses c ON c.id = cr.course_id
+             WHERE cr.status = "active"
+             ORDER BY cr.assigned_at DESC
+             LIMIT 1'
+        );
+
+        if ($active) {
+            return $active;
+        }
+
+        return $this->fetchOne(
+            'SELECT COALESCE(u.department_id, c.department_id) AS department_id,
+                    cr.course_id, cr.academic_year_id, cr.semester_id, "2nd Year" AS study_year
+             FROM course_registrations cr
+             JOIN users u ON u.id = cr.user_id
+             JOIN courses c ON c.id = cr.course_id
+             WHERE cr.status = "approved"
+             ORDER BY cr.requested_at DESC
+             LIMIT 1'
+        ) ?? [];
+    }
+
+    public function getCurrentClassRepresentative(array $filters): ?array
+    {
+        if (empty($filters['course_id']) || empty($filters['academic_year_id']) || empty($filters['semester_id'])) {
+            return null;
+        }
+
+        return $this->fetchOne(
+            'SELECT cr.id, cr.department_id, cr.course_id, cr.academic_year_id, cr.semester_id,
+                    cr.study_year, cr.assigned_at, cr.status,
+                    student.id AS student_id, student.name, student.email, student.student_number,
+                    student.phone, student.program, student.class_group,
+                    d.name AS department_name, d.code AS department_code,
+                    c.title AS course_title, c.code AS course_code,
+                    ay.name AS academic_year, s.name AS semester,
+                    assigned.name AS assigned_by_name
+             FROM class_representatives cr
+             JOIN users student ON student.id = cr.student_id
+             LEFT JOIN departments d ON d.id = cr.department_id
+             JOIN courses c ON c.id = cr.course_id
+             JOIN academic_years ay ON ay.id = cr.academic_year_id
+             JOIN semesters s ON s.id = cr.semester_id
+             LEFT JOIN users assigned ON assigned.id = cr.assigned_by
+             WHERE cr.status = "active"
+               AND cr.course_id = :course_id
+               AND cr.academic_year_id = :academic_year_id
+               AND cr.semester_id = :semester_id
+               AND cr.study_year = :study_year
+             ORDER BY cr.assigned_at DESC
+             LIMIT 1',
+            [
+                'course_id' => (int) $filters['course_id'],
+                'academic_year_id' => (int) $filters['academic_year_id'],
+                'semester_id' => (int) $filters['semester_id'],
+                'study_year' => $filters['study_year'] ?? '',
+            ]
+        );
+    }
+
+    public function getClassRepresentativeStudents(array $filters): array
+    {
+        if (empty($filters['course_id']) || empty($filters['academic_year_id']) || empty($filters['semester_id'])) {
+            return [];
+        }
+
+        $sql = 'SELECT DISTINCT u.id, u.name, u.email, u.student_number, u.phone, u.program,
+                       u.class_group, u.status, u.created_at,
+                       d.name AS department_name, d.code AS department_code,
+                       c.title AS course_title, c.code AS course_code,
+                       ay.name AS academic_year, s.name AS semester,
+                       active_cr.id AS active_cr_id
+                FROM course_registrations cr
+                JOIN users u ON u.id = cr.user_id
+                JOIN roles r ON r.id = u.role_id
+                JOIN courses c ON c.id = cr.course_id
+                JOIN academic_years ay ON ay.id = cr.academic_year_id
+                JOIN semesters s ON s.id = cr.semester_id
+                LEFT JOIN departments d ON d.id = u.department_id
+                LEFT JOIN class_representatives active_cr
+                    ON active_cr.student_id = u.id
+                   AND active_cr.course_id = cr.course_id
+                   AND active_cr.academic_year_id = cr.academic_year_id
+                   AND active_cr.semester_id = cr.semester_id
+                   AND active_cr.study_year = :study_year
+                   AND active_cr.status = "active"
+                WHERE r.slug = "student"
+                  AND cr.status = "approved"
+                  AND cr.course_id = :course_id
+                  AND cr.academic_year_id = :academic_year_id
+                  AND cr.semester_id = :semester_id';
+
+        $params = [
+            'study_year' => $filters['study_year'] ?? '',
+            'course_id' => (int) $filters['course_id'],
+            'academic_year_id' => (int) $filters['academic_year_id'],
+            'semester_id' => (int) $filters['semester_id'],
+        ];
+
+        if (!empty($filters['department_id'])) {
+            $sql .= ' AND u.department_id = :department_id';
+            $params['department_id'] = (int) $filters['department_id'];
+        }
+
+        if (!empty($filters['search'])) {
+            $sql .= ' AND (u.name LIKE :search OR u.email LIKE :search OR u.student_number LIKE :search OR u.phone LIKE :search OR u.class_group LIKE :search)';
+            $params['search'] = '%' . $filters['search'] . '%';
+        }
+
+        $sql .= ' ORDER BY u.name';
+
+        return $this->fetchAll($sql, $params);
+    }
+
+    public function assignClassRepresentative(array $data, ?array $actor = null): void
+    {
+        $params = [
+            'department_id' => $this->nullIfEmpty($data['department_id'] ?? null),
+            'course_id' => (int) ($data['course_id'] ?? 0),
+            'academic_year_id' => (int) ($data['academic_year_id'] ?? 0),
+            'semester_id' => (int) ($data['semester_id'] ?? 0),
+            'study_year' => trim((string) ($data['study_year'] ?? '')),
+            'student_id' => (int) ($data['student_id'] ?? 0),
+            'assigned_by' => $actor['id'] ?? null,
+        ];
+
+        if ($params['course_id'] <= 0 || $params['academic_year_id'] <= 0 || $params['semester_id'] <= 0 || $params['student_id'] <= 0 || $params['study_year'] === '') {
+            throw new RuntimeException('Select a course, year, semester, academic year, and student before assigning a class representative.');
+        }
+
+        $student = $this->fetchOne(
+            'SELECT u.id
+             FROM course_registrations cr
+             JOIN users u ON u.id = cr.user_id
+             JOIN roles r ON r.id = u.role_id
+             WHERE r.slug = "student"
+               AND u.id = :student_id
+               AND cr.course_id = :course_id
+               AND cr.academic_year_id = :academic_year_id
+               AND cr.semester_id = :semester_id
+               AND cr.status = "approved"
+             LIMIT 1',
+            [
+                'student_id' => $params['student_id'],
+                'course_id' => $params['course_id'],
+                'academic_year_id' => $params['academic_year_id'],
+                'semester_id' => $params['semester_id'],
+            ]
+        );
+
+        if (!$student) {
+            throw new RuntimeException('Only an approved student in the selected class can be assigned as class representative.');
+        }
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->execute(
+                'UPDATE class_representatives
+                 SET status = "inactive", ended_at = COALESCE(ended_at, CURRENT_TIMESTAMP)
+                 WHERE status = "active"
+                   AND course_id = :course_id
+                   AND academic_year_id = :academic_year_id
+                   AND semester_id = :semester_id
+                   AND study_year = :study_year',
+                [
+                    'course_id' => $params['course_id'],
+                    'academic_year_id' => $params['academic_year_id'],
+                    'semester_id' => $params['semester_id'],
+                    'study_year' => $params['study_year'],
+                ]
+            );
+
+            $this->execute(
+                'INSERT INTO class_representatives (department_id, course_id, academic_year_id, semester_id, study_year, student_id, assigned_by, status)
+                 VALUES (:department_id, :course_id, :academic_year_id, :semester_id, :study_year, :student_id, :assigned_by, "active")',
+                $params
+            );
+            $newId = (int) $this->pdo->lastInsertId();
+            $this->pdo->commit();
+        } catch (Throwable $error) {
+            $this->pdo->rollBack();
+            throw $error;
+        }
+
+        $this->logActivity($actor, 'assigned class representative', 'class_representatives', $newId);
+    }
+
+    public function unassignClassRepresentative(int $id, ?array $actor = null): void
+    {
+        $record = $this->fetchOne('SELECT id FROM class_representatives WHERE id = :id LIMIT 1', ['id' => $id]);
+        if (!$record) {
+            throw new RuntimeException('Class representative record was not found.');
+        }
+
+        $this->execute(
+            'UPDATE class_representatives
+             SET status = "inactive", ended_at = COALESCE(ended_at, CURRENT_TIMESTAMP)
+             WHERE id = :id',
+            ['id' => $id]
+        );
+        $this->logActivity($actor, 'unassigned class representative', 'class_representatives', $id);
     }
 
     public function createUser(array $data, ?array $actor = null): void
@@ -1059,6 +1272,32 @@ final class DatabaseRepository
                 INDEX idx_notifications_user (user_id, is_read, created_at),
                 CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 CONSTRAINT fk_notifications_actor FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+            ) ENGINE=InnoDB'
+        );
+
+        $this->pdo->exec(
+            'CREATE TABLE IF NOT EXISTS class_representatives (
+                id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                department_id INT UNSIGNED NULL,
+                course_id INT UNSIGNED NOT NULL,
+                academic_year_id INT UNSIGNED NOT NULL,
+                semester_id INT UNSIGNED NOT NULL,
+                study_year VARCHAR(60) NOT NULL,
+                student_id INT UNSIGNED NOT NULL,
+                assigned_by INT UNSIGNED NULL,
+                status ENUM("active", "inactive") NOT NULL DEFAULT "active",
+                assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                ended_at DATETIME NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_cr_scope (course_id, academic_year_id, semester_id, study_year, status),
+                INDEX idx_cr_student (student_id),
+                CONSTRAINT fk_cr_department FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+                CONSTRAINT fk_cr_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+                CONSTRAINT fk_cr_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+                CONSTRAINT fk_cr_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE,
+                CONSTRAINT fk_cr_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_cr_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
             ) ENGINE=InnoDB'
         );
     }

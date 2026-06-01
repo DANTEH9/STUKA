@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS assignments;
 DROP TABLE IF EXISTS assessment_items;
 DROP TABLE IF EXISTS ca_results;
 DROP TABLE IF EXISTS lecturer_courses;
+DROP TABLE IF EXISTS class_representatives;
 DROP TABLE IF EXISTS course_registrations;
 DROP TABLE IF EXISTS modules;
 DROP TABLE IF EXISTS courses;
@@ -147,6 +148,30 @@ CREATE TABLE course_registrations (
     CONSTRAINT fk_registrations_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
     CONSTRAINT fk_registrations_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE,
     CONSTRAINT fk_registrations_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE class_representatives (
+    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    department_id INT UNSIGNED NULL,
+    course_id INT UNSIGNED NOT NULL,
+    academic_year_id INT UNSIGNED NOT NULL,
+    semester_id INT UNSIGNED NOT NULL,
+    study_year VARCHAR(60) NOT NULL,
+    student_id INT UNSIGNED NOT NULL,
+    assigned_by INT UNSIGNED NULL,
+    status ENUM('active', 'inactive') NOT NULL DEFAULT 'active',
+    assigned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_cr_scope (course_id, academic_year_id, semester_id, study_year, status),
+    INDEX idx_cr_student (student_id),
+    CONSTRAINT fk_cr_department FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
+    CONSTRAINT fk_cr_course FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cr_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cr_semester FOREIGN KEY (semester_id) REFERENCES semesters(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cr_student FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+    CONSTRAINT fk_cr_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE lecturer_courses (
@@ -452,6 +477,9 @@ INSERT INTO lecturer_courses (lecturer_id, course_id, academic_year_id, semester
 INSERT INTO course_registrations (id, user_id, course_id, academic_year_id, semester_id, status, requested_at, reviewed_by, reviewed_at, notes) VALUES
 (1, 5, 1, 1, 2, 'approved', '2026-02-01 08:12:00', 2, '2026-02-01 11:05:00', 'Continuing student'),
 (2, 5, 2, 1, 2, 'pending', '2026-05-12 13:41:00', NULL, NULL, 'Requested transfer evaluation');
+
+INSERT INTO class_representatives (id, department_id, course_id, academic_year_id, semester_id, study_year, student_id, assigned_by, status, assigned_at) VALUES
+(1, 1, 1, 1, 2, '2nd Year', 5, 2, 'active', '2026-05-18 09:20:00');
 
 INSERT INTO assignments (id, course_id, module_id, lecturer_id, semester_id, title, instructions, date_given, deadline, submission_type, status) VALUES
 (1, 1, 3, 3, 2, 'Normalized schema design', 'Design an ERD and submit SQL create statements.', '2026-05-28', '2026-06-14', 'Online / Email', 'open'),

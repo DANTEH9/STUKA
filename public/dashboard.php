@@ -15,27 +15,36 @@ $materials = array_slice($repo->getMaterials([], $user), 0, 4);
 $registrations = array_slice($repo->getCourseRegistrations(['status' => 'pending'], $user), 0, 4);
 $notifications = can_upload_teaching_files($role) ? $repo->getNotificationsForUser((int) $user['id'], 4) : [];
 $recentSubmissions = can_upload_teaching_files($role) ? $repo->getRecentSubmissionsForLecturer($user, 4) : [];
+$isAdminDashboard = is_admin_role($role) || $role === 'department_head';
+$activityLogs = $isAdminDashboard ? array_slice($repo->getActivityLogs([]), 0, 5) : [];
+$quickActions = [
+    ['label' => 'Students', 'href' => 'students.php', 'meta' => 'Manage learner records'],
+    ['label' => 'Class Reps', 'href' => 'class-representatives.php', 'meta' => 'Assign class representatives'],
+    ['label' => 'Courses', 'href' => 'courses.php', 'meta' => 'Review course catalogue'],
+    ['label' => 'Announcements', 'href' => 'announcements.php', 'meta' => 'Publish academic notices'],
+];
 
 $cardsByRole = [
     'super_admin' => [
-        ['label' => 'Students', 'value' => $stats['total_students'], 'meta' => 'Active student records'],
-        ['label' => 'Lecturers', 'value' => $stats['total_lecturers'], 'meta' => 'Teaching accounts'],
-        ['label' => 'Courses', 'value' => $stats['total_courses'], 'meta' => 'Configured courses'],
-        ['label' => 'Departments', 'value' => $stats['total_departments'], 'meta' => 'Academic units'],
-        ['label' => 'Assignments', 'value' => $stats['total_assignments'], 'meta' => 'Course work items'],
-        ['label' => 'Activity logs', 'value' => $stats['activity_logs'], 'meta' => 'Recent system events'],
+        ['label' => 'Total Students', 'value' => $stats['total_students'], 'meta' => 'Active student records'],
+        ['label' => 'Total Lecturers', 'value' => $stats['total_lecturers'], 'meta' => 'Teaching accounts'],
+        ['label' => 'Total Modules', 'value' => $stats['total_modules'], 'meta' => 'Published module units'],
+        ['label' => 'Total Departments', 'value' => $stats['total_departments'], 'meta' => 'Academic units'],
+        ['label' => 'Active Courses', 'value' => $stats['active_courses'], 'meta' => 'Open programmes'],
     ],
     'admin' => [
-        ['label' => 'Students', 'value' => $stats['total_students'], 'meta' => 'Managed learners'],
-        ['label' => 'Courses', 'value' => $stats['total_courses'], 'meta' => 'Registration catalogue'],
-        ['label' => 'Pending registrations', 'value' => $stats['pending_registrations'], 'meta' => 'Need review'],
-        ['label' => 'Announcements', 'value' => $stats['total_announcements'], 'meta' => 'Published notices'],
+        ['label' => 'Total Students', 'value' => $stats['total_students'], 'meta' => 'Managed learners'],
+        ['label' => 'Total Lecturers', 'value' => $stats['total_lecturers'], 'meta' => 'Teaching accounts'],
+        ['label' => 'Total Modules', 'value' => $stats['total_modules'], 'meta' => 'Published module units'],
+        ['label' => 'Total Departments', 'value' => $stats['total_departments'], 'meta' => 'Academic units'],
+        ['label' => 'Active Courses', 'value' => $stats['active_courses'], 'meta' => 'Registration catalogue'],
     ],
     'department_head' => [
-        ['label' => 'Department students', 'value' => $stats['total_students'], 'meta' => 'Visible learners'],
-        ['label' => 'Lecturers', 'value' => $stats['total_lecturers'], 'meta' => 'Teaching staff'],
-        ['label' => 'Courses', 'value' => $stats['total_courses'], 'meta' => 'Department coverage'],
-        ['label' => 'Average score', 'value' => $stats['average'] . '%', 'meta' => 'Current results mean'],
+        ['label' => 'Total Students', 'value' => $stats['total_students'], 'meta' => 'Visible learners'],
+        ['label' => 'Total Lecturers', 'value' => $stats['total_lecturers'], 'meta' => 'Teaching staff'],
+        ['label' => 'Total Modules', 'value' => $stats['total_modules'], 'meta' => 'Department module map'],
+        ['label' => 'Total Departments', 'value' => $stats['total_departments'], 'meta' => 'Academic units'],
+        ['label' => 'Active Courses', 'value' => $stats['active_courses'], 'meta' => 'Department coverage'],
     ],
     'lecturer' => [
         ['label' => 'Assigned courses', 'value' => $stats['assigned_courses'] ?? 0, 'meta' => 'Teaching load'],
@@ -71,7 +80,7 @@ page_start('Dashboard', 'dashboard');
     </div>
 </section>
 
-<section class="stats-grid">
+<section class="stats-grid dashboard-stat-grid">
     <?php foreach ($cards as $card): ?>
         <article class="stat-card">
             <span><?= e($card['label']) ?></span>
@@ -80,6 +89,44 @@ page_start('Dashboard', 'dashboard');
         </article>
     <?php endforeach; ?>
 </section>
+
+<?php if ($isAdminDashboard): ?>
+<section class="dashboard-grid admin-dashboard-grid">
+    <article class="panel quick-actions-panel">
+        <div class="panel-heading">
+            <h2>Quick actions</h2>
+            <a href="reports.php">Reports</a>
+        </div>
+        <div class="quick-action-list">
+            <?php foreach ($quickActions as $action): ?>
+                <a class="quick-action" href="<?= e($action['href']) ?>">
+                    <strong><?= e($action['label']) ?></strong>
+                    <span><?= e($action['meta']) ?></span>
+                </a>
+            <?php endforeach; ?>
+        </div>
+    </article>
+
+    <article class="panel recent-activity-panel">
+        <div class="panel-heading">
+            <h2>Recent activities</h2>
+            <a href="activity-logs.php">Open logs</a>
+        </div>
+        <div class="activity-timeline">
+            <?php foreach ($activityLogs as $activity): ?>
+                <a class="activity-item" href="activity-logs.php?search=<?= e(urlencode($activity['entity_type'] ?? '')) ?>">
+                    <span></span>
+                    <strong><?= e($activity['action']) ?></strong>
+                    <small><?= e($activity['user_name'] ?? 'System') ?> - <?= e(display_datetime($activity['created_at'] ?? '')) ?></small>
+                </a>
+            <?php endforeach; ?>
+            <?php if ($activityLogs === []): ?>
+                <div class="mini-empty">No activity has been recorded yet.</div>
+            <?php endif; ?>
+        </div>
+    </article>
+</section>
+<?php endif; ?>
 
 <section class="dashboard-grid">
     <article class="panel">
@@ -184,7 +231,7 @@ page_start('Dashboard', 'dashboard');
 </section>
 <?php endif; ?>
 
-<section class="panel">
+<section class="panel dashboard-announcements">
     <div class="panel-heading">
         <h2>Announcements</h2>
         <a href="announcements.php">Open board</a>

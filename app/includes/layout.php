@@ -9,6 +9,7 @@ function nav_items(): array
         ['key' => 'dashboard', 'label' => 'Dashboard', 'href' => 'dashboard.php', 'icon' => 'dashboard', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
         ['key' => 'users', 'label' => 'Users', 'href' => 'users.php', 'icon' => 'users', 'roles' => ['super_admin']],
         ['key' => 'students', 'label' => 'Students', 'href' => 'students.php', 'icon' => 'student', 'roles' => ['super_admin', 'admin', 'department_head']],
+        ['key' => 'class-representatives', 'label' => 'Class Reps', 'href' => 'class-representatives.php', 'icon' => 'users', 'roles' => ['super_admin', 'admin', 'department_head']],
         ['key' => 'lecturers', 'label' => 'Lecturers', 'href' => 'lecturers.php', 'icon' => 'lecturer', 'roles' => ['super_admin', 'admin', 'department_head']],
         ['key' => 'departments', 'label' => 'Departments', 'href' => 'departments.php', 'icon' => 'department', 'roles' => ['super_admin', 'admin', 'department_head']],
         ['key' => 'courses', 'label' => 'Courses', 'href' => 'courses.php', 'icon' => 'course', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
