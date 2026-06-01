@@ -583,13 +583,6 @@ final class DatabaseRepository
                  GROUP BY d.id, d.code, d.name
                  ORDER BY total DESC, d.name'
             ),
-            'assignments_per_course' => $this->fetchAll(
-                'SELECT c.code, c.title, COUNT(a.id) AS total
-                 FROM courses c
-                 LEFT JOIN assignments a ON a.course_id = c.id
-                 GROUP BY c.id, c.code, c.title
-                 ORDER BY total DESC, c.title'
-            ),
             'registration_totals' => $this->fetchAll(
                 'SELECT status AS title, COUNT(*) AS total
                  FROM course_registrations

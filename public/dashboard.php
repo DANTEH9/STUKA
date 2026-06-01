@@ -9,13 +9,10 @@ $user = current_user();
 $repo = repository();
 $stats = $repo->getStats($user);
 $role = $user['role'];
-$announcements = array_slice($repo->getAnnouncements([], $user), 0, 3);
-$assignments = array_slice($repo->getAssignments([], $user), 0, 4);
-$materials = array_slice($repo->getMaterials([], $user), 0, 4);
-$registrations = array_slice($repo->getCourseRegistrations(['status' => 'pending'], $user), 0, 4);
-$notifications = can_upload_teaching_files($role) ? $repo->getNotificationsForUser((int) $user['id'], 4) : [];
-$recentSubmissions = can_upload_teaching_files($role) ? $repo->getRecentSubmissionsForLecturer($user, 4) : [];
 $isAdminDashboard = is_admin_role($role) || $role === 'department_head';
+$announcements = array_slice($repo->getAnnouncements([], $user), 0, 3);
+$materials = array_slice($repo->getMaterials([], $user), 0, 4);
+$registrations = array_slice($repo->getCourseRegistrations($isAdminDashboard ? ['status' => 'pending'] : [], $user), 0, 4);
 $activityLogs = $isAdminDashboard ? array_slice($repo->getActivityLogs([]), 0, 5) : [];
 $quickActions = [
     ['label' => 'Students', 'href' => 'students.php', 'meta' => 'Manage learner records'],
@@ -49,13 +46,13 @@ $cardsByRole = [
     'lecturer' => [
         ['label' => 'Assigned courses', 'value' => $stats['assigned_courses'] ?? 0, 'meta' => 'Teaching load'],
         ['label' => 'Enrolled students', 'value' => $stats['enrolled_students'] ?? 0, 'meta' => 'Approved registrations'],
-        ['label' => 'Assignments', 'value' => $stats['total_assignments'], 'meta' => 'Published work'],
-        ['label' => 'Pending reviews', 'value' => $stats['pending_reviews'] ?? 0, 'meta' => 'Submissions needing review'],
+        ['label' => 'Materials', 'value' => $stats['materials'], 'meta' => 'Study files'],
+        ['label' => 'Past papers', 'value' => $stats['past_papers'], 'meta' => 'Reference papers'],
     ],
     'student' => [
         ['label' => 'Registered courses', 'value' => $stats['registered_courses'] ?? 0, 'meta' => 'Approved courses'],
-        ['label' => 'Assignments', 'value' => $stats['total_assignments'], 'meta' => 'Available tasks'],
         ['label' => 'Materials', 'value' => $stats['materials'], 'meta' => 'Study files'],
+        ['label' => 'Past papers', 'value' => $stats['past_papers'], 'meta' => 'Revision files'],
         ['label' => 'Average score', 'value' => $stats['average'] . '%', 'meta' => 'Released results'],
     ],
 ];
@@ -131,32 +128,22 @@ page_start('Dashboard', 'dashboard');
 <section class="dashboard-grid">
     <article class="panel">
         <div class="panel-heading">
-            <h2><?= is_admin_role($role) || $role === 'department_head' ? 'Pending registrations' : 'Upcoming assignments' ?></h2>
-            <a href="<?= is_admin_role($role) || $role === 'department_head' ? 'registrations.php' : 'assignments.php' ?>">View all</a>
+            <h2><?= $isAdminDashboard ? 'Pending registrations' : 'Course registrations' ?></h2>
+            <a href="registrations.php">View all</a>
         </div>
         <div class="list-stack">
-            <?php $items = (is_admin_role($role) || $role === 'department_head') ? $registrations : $assignments; ?>
+            <?php $items = $registrations; ?>
             <?php foreach ($items as $item): ?>
-                <?php if (isset($item['student_name'])): ?>
-                    <a class="list-item" href="registrations.php?search=<?= e(urlencode($item['student_name'])) ?>">
-                        <span>
-                            <strong><?= e($item['student_name']) ?></strong>
-                            <small><?= e($item['course_title']) ?> - <?= e($item['semester'] ?? '') ?></small>
-                        </span>
-                        <span class="pill warning"><?= e($item['status']) ?></span>
-                    </a>
-                <?php else: ?>
-                    <a class="list-item" href="assignments.php?search=<?= e(urlencode($item['title'])) ?>">
-                        <span>
-                            <strong><?= e($item['title']) ?></strong>
-                            <small><?= e($item['module_name'] ?: $item['course_title']) ?> - <?= e($item['submission_type']) ?></small>
-                        </span>
-                        <span class="pill"><?= e(display_date($item['deadline'])) ?></span>
-                    </a>
-                <?php endif; ?>
+                <a class="list-item" href="registrations.php?search=<?= e(urlencode($item['student_name'] ?? $item['course_title'] ?? '')) ?>">
+                    <span>
+                        <strong><?= e($item['student_name'] ?? $item['course_title'] ?? 'Registration') ?></strong>
+                        <small><?= e($item['course_title'] ?? '') ?> - <?= e($item['semester'] ?? '') ?></small>
+                    </span>
+                    <span class="pill warning"><?= e($item['status'] ?? 'pending') ?></span>
+                </a>
             <?php endforeach; ?>
             <?php if ($items === []): ?>
-                <div class="mini-empty">Nothing needs attention right now.</div>
+                <div class="mini-empty">No registration updates right now.</div>
             <?php endif; ?>
         </div>
     </article>
@@ -182,54 +169,6 @@ page_start('Dashboard', 'dashboard');
         </div>
     </article>
 </section>
-
-<?php if (can_upload_teaching_files($role)): ?>
-<section class="dashboard-grid">
-    <article class="panel">
-        <div class="panel-heading">
-            <h2>Submission notifications</h2>
-            <a href="assignments.php">Assignments</a>
-        </div>
-        <div class="list-stack">
-            <?php foreach ($notifications as $notification): ?>
-                <a class="list-item" href="assignments.php">
-                    <span>
-                        <strong><?= e($notification['title']) ?></strong>
-                        <small><?= e($notification['body']) ?> - <?= e(display_datetime($notification['created_at'])) ?></small>
-                    </span>
-                    <span class="pill <?= (int) $notification['is_read'] === 1 ? 'soft' : 'warning' ?>"><?= (int) $notification['is_read'] === 1 ? 'Read' : 'New' ?></span>
-                </a>
-            <?php endforeach; ?>
-            <?php if ($notifications === []): ?>
-                <div class="mini-empty">No submission notifications yet.</div>
-            <?php endif; ?>
-        </div>
-    </article>
-
-    <article class="panel">
-        <div class="panel-heading">
-            <h2>Recent submissions</h2>
-            <a href="assignments.php">View assignments</a>
-        </div>
-        <div class="list-stack">
-            <?php foreach ($recentSubmissions as $submission): ?>
-                <a class="list-item" href="submissions.php?assignment_id=<?= e($submission['assignment_id']) ?>">
-                    <span>
-                        <strong><?= e($submission['student_name']) ?></strong>
-                        <small><?= e($submission['assignment_title']) ?> - <?= e(display_datetime($submission['submitted_at'])) ?></small>
-                    </span>
-                    <span class="pill <?= !empty($submission['reviewed_at']) ? 'success' : ((int) $submission['is_late'] === 1 ? 'danger' : 'soft') ?>">
-                        <?= !empty($submission['reviewed_at']) ? 'Reviewed' : ((int) $submission['is_late'] === 1 ? 'Late' : 'Submitted') ?>
-                    </span>
-                </a>
-            <?php endforeach; ?>
-            <?php if ($recentSubmissions === []): ?>
-                <div class="mini-empty">No assignment submissions have arrived yet.</div>
-            <?php endif; ?>
-        </div>
-    </article>
-</section>
-<?php endif; ?>
 
 <section class="panel dashboard-announcements">
     <div class="panel-heading">

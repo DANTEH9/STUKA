@@ -16,7 +16,6 @@ function nav_items(): array
         ['key' => 'modules', 'label' => 'Modules', 'href' => 'modules.php', 'icon' => 'book', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
         ['key' => 'registrations', 'label' => 'Registrations', 'href' => 'registrations.php', 'icon' => 'check', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
         ['key' => 'materials', 'label' => 'Materials', 'href' => 'materials.php', 'icon' => 'folder', 'roles' => ['super_admin', 'admin', 'lecturer', 'student']],
-        ['key' => 'assignments', 'label' => 'Assignments', 'href' => 'assignments.php', 'icon' => 'clipboard', 'roles' => ['super_admin', 'admin', 'lecturer', 'student']],
         ['key' => 'timetable', 'label' => 'Timetable', 'href' => 'timetable.php', 'icon' => 'calendar', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
         ['key' => 'results', 'label' => 'Results', 'href' => 'results.php', 'icon' => 'chart', 'roles' => ['super_admin', 'admin', 'department_head', 'lecturer', 'student']],
         ['key' => 'past-papers', 'label' => 'Past Papers', 'href' => 'past-papers.php', 'icon' => 'archive', 'roles' => ['super_admin', 'admin', 'lecturer', 'student']],

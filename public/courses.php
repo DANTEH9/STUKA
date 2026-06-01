@@ -22,7 +22,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'title' => post_value('title'),
             'description' => post_value('description'),
             'level' => post_value('level'),
-            'credits' => post_value('credits', '3'),
+            'credits' => '120',
             'status' => post_value('status', 'active'),
             'lecturer_id' => post_value('lecturer_id'),
             'academic_year_id' => post_value('academic_year_id'),
@@ -73,7 +73,6 @@ page_start('Courses', 'courses');
             </select>
         </label>
         <label><span>Level</span><input name="level" placeholder="Diploma, Degree"></label>
-        <label><span>Credits</span><input type="number" min="1" max="480" name="credits" value="120"></label>
         <label>
             <span>Status</span>
             <select name="status"><option value="active">Active</option><option value="archived">Archived</option></select>
@@ -138,7 +137,6 @@ page_start('Courses', 'courses');
             <dl class="metric-row">
                 <div><dt>Modules</dt><dd><?= e($course['module_count'] ?? 0) ?></dd></div>
                 <div><dt>Students</dt><dd><?= e($course['student_count'] ?? 0) ?></dd></div>
-                <div><dt>Credits</dt><dd><?= e($course['credits'] ?? 0) ?></dd></div>
             </dl>
             <div class="card-actions">
                 <span class="pill <?= ($course['status'] ?? '') === 'active' ? 'success' : 'warning' ?>"><?= e($course['status']) ?></span>

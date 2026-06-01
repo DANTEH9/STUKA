@@ -12,7 +12,7 @@ page_start('Reports', 'reports');
 <section class="page-title-row">
     <div>
         <h2>Reports</h2>
-        <p>Quick operational summaries for registrations, teaching load, assignments, and results.</p>
+        <p>Quick operational summaries for registrations, teaching load, materials, and results.</p>
     </div>
 </section>
 

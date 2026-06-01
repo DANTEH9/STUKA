@@ -26,7 +26,7 @@ page_start('Activity Logs', 'activity-logs');
     <form method="get" class="filter-bar">
         <select name="entity_type" aria-label="Entity type">
             <option value="">All entities</option>
-            <?php foreach (['users', 'departments', 'courses', 'modules', 'course_registrations', 'materials', 'assignments', 'results', 'settings'] as $entity): ?>
+            <?php foreach (['users', 'departments', 'courses', 'modules', 'course_registrations', 'materials', 'results', 'settings'] as $entity): ?>
                 <option value="<?= e($entity) ?>" <?= selected($filters['entity_type'], $entity) ?>><?= e($entity) ?></option>
             <?php endforeach; ?>
         </select>

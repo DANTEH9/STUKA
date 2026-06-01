@@ -39,7 +39,7 @@ $messages = flash_messages();
             </div>
 
             <h1>Academic Portal</h1>
-            <p class="muted">Sign in to access modules, assignments, study materials, results, and past papers.</p>
+            <p class="muted">Sign in to access modules, study materials, results, and past papers.</p>
 
             <?php if ($error !== ''): ?>
                 <div class="notice error"><?= e($error) ?></div>

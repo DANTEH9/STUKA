@@ -55,7 +55,7 @@ page_start('Modules', 'modules');
 <section class="page-title-row">
     <div>
         <h2>Modules</h2>
-        <p>Connect course content to semesters, lecturers, assignments, materials, and results.</p>
+        <p>Connect course content to semesters, lecturers, materials, and results.</p>
     </div>
 </section>
 
@@ -155,7 +155,6 @@ page_start('Modules', 'modules');
                             </td>
                         <?php endif; ?>
                         <td class="action-cell">
-                            <a class="button subtle" href="assignments.php?search=<?= e(urlencode($module['module_name'])) ?>">Assignments</a>
                             <a class="button quiet" href="materials.php?search=<?= e(urlencode($module['module_name'])) ?>">Materials</a>
                         </td>
                     </tr>

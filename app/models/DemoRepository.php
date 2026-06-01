@@ -257,10 +257,6 @@ final class DemoRepository
                 ['code' => 'SOC', 'title' => 'School of Computing', 'total' => 2],
                 ['code' => 'BUS', 'title' => 'Business Studies', 'total' => 1],
             ],
-            'assignments_per_course' => [
-                ['code' => 'DIT201', 'title' => 'Diploma in Information Technology', 'total' => 3],
-                ['code' => 'BCS301', 'title' => 'Bachelor of Computer Science', 'total' => 1],
-            ],
             'registration_totals' => [
                 ['title' => 'approved', 'total' => 4],
                 ['title' => 'pending', 'total' => 1],
